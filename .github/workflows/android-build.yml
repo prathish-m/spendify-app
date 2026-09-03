@@ -59,12 +59,15 @@ jobs:
             npx cap add android
           fi
 
-      # Generate the app icon. The committed SVG source (resources/icon.svg) is
-      # rasterized to resources/icon.png with sharp (bundled by
-      # @capacitor/assets), then capacitor-assets generates every Android
-      # density bucket + adaptive icon into the native project.
+      # Generate the app icon. @capacitor/assets (which pulls in the native
+      # `sharp`/libvips binary) is installed here on-demand rather than kept in
+      # package.json, so a local `npm install` on Windows never needs to fetch
+      # that large native download. The committed SVG (resources/icon.svg) is
+      # rasterized to resources/icon.png with sharp, then capacitor-assets
+      # generates every Android density bucket + adaptive icon.
       - name: Generate app icon
         run: |
+          npm install --no-save @capacitor/assets@3 sharp
           node -e "const sharp=require('sharp');sharp('resources/icon.svg',{density:512}).resize(1024,1024).png().toFile('resources/icon.png').then(()=>console.log('icon.png generated')).catch(e=>{console.error(e);process.exit(1)})"
           npx capacitor-assets generate --android --iconBackgroundColor '#0a0a0a' --iconBackgroundColorDark '#0a0a0a'
 
