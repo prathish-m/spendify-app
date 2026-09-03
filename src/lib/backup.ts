@@ -1,5 +1,8 @@
 import type { Person, Transaction } from '../types'
 import { api } from './api'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 
 /**
  * Backup import/export helpers.
@@ -83,16 +86,46 @@ export async function buildBackup(
   }
 }
 
-/** Serialize + trigger a browser download of the backup JSON. */
-export function downloadBackup(backup: BackupFile) {
-  const blob = new Blob([JSON.stringify(backup, null, 2)], {
-    type: 'application/json',
-  })
+/**
+ * Serialize + save/share the backup JSON.
+ *
+ * On the web this triggers a normal browser download. Inside the Android
+ * (Capacitor) WebView the `<a download>` trick does nothing, so we instead
+ * write the file to the app's Documents directory with the Filesystem plugin
+ * and then open the native share sheet so the user can save it to Files /
+ * Drive / send it anywhere. Returns a promise so callers can await + surface
+ * errors.
+ */
+export async function downloadBackup(backup: BackupFile): Promise<void> {
+  const json = JSON.stringify(backup, null, 2)
+  const stamp = new Date().toISOString().slice(0, 10)
+  const filename = `spendify-backup-${stamp}.json`
+
+  if (Capacitor.isNativePlatform()) {
+    // Write into the app-scoped Documents dir (no runtime storage permission
+    // needed), then hand the file URI to the OS share sheet.
+    const written = await Filesystem.writeFile({
+      path: filename,
+      data: json,
+      directory: Directory.Documents,
+      encoding: Encoding.UTF8,
+      recursive: true,
+    })
+    await Share.share({
+      title: 'Spendify backup',
+      text: filename,
+      url: written.uri,
+      dialogTitle: 'Save or share your backup',
+    })
+    return
+  }
+
+  // Web fallback: classic anchor download.
+  const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const stamp = new Date().toISOString().slice(0, 10)
   a.href = url
-  a.download = `spendify-backup-${stamp}.json`
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   a.remove()

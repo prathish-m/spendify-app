@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useTheme } from '../lib/theme'
-import { formatMoney } from '../lib/format'
+import { formatMoney, formatDate } from '../lib/format'
 import { DatePicker } from './ui/DatePicker'
 import {
   CHART_COLORS as COLORS,
@@ -38,6 +38,8 @@ import {
   spendByCategory,
   spendOverTime,
   summarize,
+  activeBudget,
+  computeBudgetProgress,
   type CategorySlice,
   type Period,
   type TimePoint,
@@ -238,6 +240,128 @@ function IncomeVsExpenseChart({ series }: { series: TimePoint[] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+    </div>
+  )
+}
+
+/** A thin labelled progress bar used inside the budget indicator. */
+function BudgetBar({
+  spent,
+  limit,
+  over,
+}: {
+  spent: number
+  limit: number
+  over: boolean
+}) {
+  const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div
+        className={`h-full rounded-full transition-all ${
+          over ? 'bg-money-out' : 'bg-money-in'
+        }`}
+        style={{ width: `${over ? 100 : pct}%` }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Budget indicator: shows the budget covering the selected "From" date (or
+ * today when unset) — overall spent vs cap with over/under status, plus a
+ * per-category breakdown. Category rows with an explicit limit show their own
+ * over/under; others just show spend within the range.
+ */
+function BudgetIndicator({ anchorDate }: { anchorDate: string }) {
+  const transactions = useStore((s) => s.transactions)
+  const budgets = useStore((s) => s.budgets)
+
+  const budget = useMemo(
+    () => activeBudget(budgets, anchorDate),
+    [budgets, anchorDate],
+  )
+  const progress = useMemo(
+    () => (budget ? computeBudgetProgress(transactions, budget) : null),
+    [budget, transactions],
+  )
+
+  if (!budget || !progress) {
+    return (
+      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+        <CardHeader icon={<Wallet size={15} />} title="Budget" />
+        <p className="py-6 text-center text-xs text-slate-300">
+          No budget covers this period. Create one from the Budgets screen.
+        </p>
+      </div>
+    )
+  }
+
+  const { spent, limit, remaining, over, categories } = progress
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+      <CardHeader icon={<Wallet size={15} />} title="Budget" />
+
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="text-lg font-semibold tracking-tight text-slate-900">
+          {formatMoney(spent)}
+          <span className="text-sm font-normal text-slate-400">
+            {' '}
+            / {formatMoney(limit)}
+          </span>
+        </span>
+        <span
+          className={`text-xs font-semibold ${
+            over ? 'text-money-out' : 'text-money-in'
+          }`}
+        >
+          {over
+            ? `${formatMoney(Math.abs(remaining))} over`
+            : `${formatMoney(remaining)} left`}
+        </span>
+      </div>
+      <p className="mb-2 text-[11px] text-slate-400">
+        {formatDate(budget.startDate)} – {formatDate(budget.endDate)}
+      </p>
+      <BudgetBar spent={spent} limit={limit} over={over} />
+
+      {categories.length > 0 && (
+        <div className="mt-4 space-y-3">
+          <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            By category
+          </span>
+          {categories.map((c) => (
+            <div key={c.category} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="truncate font-medium text-slate-600">
+                  {c.category}
+                </span>
+                <span className="shrink-0 text-slate-500">
+                  {formatMoney(c.spent)}
+                  {c.limit !== null && (
+                    <span className="text-slate-300">
+                      {' '}
+                      / {formatMoney(c.limit)}
+                    </span>
+                  )}
+                  {c.limit !== null && (
+                    <span
+                      className={`ml-1.5 font-semibold ${
+                        c.over ? 'text-money-out' : 'text-money-in'
+                      }`}
+                    >
+                      {c.over ? 'over' : 'ok'}
+                    </span>
+                  )}
+                </span>
+              </div>
+              {c.limit !== null && (
+                <BudgetBar spent={c.spent} limit={c.limit} over={c.over} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -484,6 +608,10 @@ export function Analytics() {
               }
             />
           </div>
+
+          {/* Budget indicator — over/underspend for the budget covering the
+              selected "From" date (or today when unset), plus categories. */}
+          <BudgetIndicator anchorDate={from || new Date().toISOString().slice(0, 10)} />
 
           <SpendOverTimeChart series={series} />
 

@@ -1,4 +1,4 @@
-import type { Person, Transaction, User } from '../types'
+import type { Budget, Person, Transaction, User } from '../types'
 
 /**
  * API client for the Node.js + Postgres backend.
@@ -36,6 +36,19 @@ export function getToken() {
 export interface AppState {
   people: Person[]
   transactions: Transaction[]
+  /**
+   * Spending budgets (Android-only feature). Optional so the type stays
+   * compatible with any state payload that predates the feature.
+   */
+  budgets?: Budget[]
+}
+
+/** Payload for creating a budget. */
+export interface NewBudget {
+  startDate: string
+  endDate: string
+  amount: number
+  categoryLimits?: { category: string; amount: number }[]
 }
 
 /** Thrown for non-2xx responses; carries the HTTP status. */
@@ -124,6 +137,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ personId, amount, ...opts }),
     }),
+
+  // ── Budgets ──
+  /** Create a budget. Server rejects overlapping ranges with a 409. */
+  addBudget: (budget: NewBudget) =>
+    request<{ state: AppState }>('/budgets', {
+      method: 'POST',
+      body: JSON.stringify(budget),
+    }),
+
+  removeBudget: (id: string) =>
+    request<{ state: AppState }>(`/budgets/${id}`, { method: 'DELETE' }),
 
   // ── Transactions ──
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) =>

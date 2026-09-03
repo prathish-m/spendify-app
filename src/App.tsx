@@ -17,6 +17,7 @@ import { Analytics } from './components/Analytics'
 import { PeopleManager } from './components/PeopleManager'
 import { TransactionForm } from './components/TransactionForm'
 import { TransactionHistory } from './components/TransactionHistory'
+import { BudgetManager } from './components/BudgetManager'
 import { AuthScreen } from './components/AuthScreen'
 import { ConfirmDialog, useConfirm } from './components/ui/ConfirmDialog'
 import { GlobalBusy } from './components/ui/GlobalBusy'
@@ -38,7 +39,7 @@ import {
  * when signed out, and the dashboard when signed in. Data comes from the
  * multi-user Postgres backend, scoped to the logged-in account.
  */
-type Page = 'dashboard' | 'home'
+type Page = 'dashboard' | 'home' | 'budgets'
 
 export default function App() {
   const [formOpen, setFormOpen] = useState(false)
@@ -80,7 +81,21 @@ export default function App() {
   // bytes are fetched + embedded so the backup is self-contained (async).
   const handleExport = async () => {
     if (transactions.length === 0) return
-    downloadBackup(await buildBackup(people, transactions))
+    try {
+      await downloadBackup(await buildBackup(people, transactions))
+    } catch (err) {
+      // Native save/share can be cancelled by the user or fail on device;
+      // surface anything unexpected rather than failing silently.
+      const message = err instanceof Error ? err.message : String(err)
+      if (/cancel/i.test(message)) return // user dismissed the share sheet
+      await confirm({
+        title: 'Export failed',
+        message,
+        confirmLabel: 'OK',
+        cancelLabel: 'Close',
+        destructive: false,
+      })
+    }
   }
 
   // Import: parse the chosen file, confirm, then bulk re-create the entries.
@@ -309,6 +324,9 @@ export default function App() {
             <Dashboard />
             <Analytics />
           </div>
+        ) : page === 'budgets' ? (
+          /* Budgets page: create/manage spending budgets. */
+          <BudgetManager />
         ) : (
           /* Home page: settlements, transaction history and people. */
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">

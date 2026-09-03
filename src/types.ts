@@ -139,6 +139,31 @@ export interface Transaction {
   viewerStatus?: ShareStatus
 }
 
+/** An optional per-category spend cap inside a budget. */
+export interface BudgetCategoryLimit {
+  id: string
+  category: string
+  amount: number
+}
+
+/**
+ * A spending budget: a single overall cap over an inclusive date range,
+ * with zero or more optional per-category limits. Budget ranges never
+ * overlap (enforced server-side).
+ */
+export interface Budget {
+  id: string
+  /** Inclusive ISO start date (YYYY-MM-DD). */
+  startDate: string
+  /** Inclusive ISO end date (YYYY-MM-DD). */
+  endDate: string
+  /** Overall spend cap for the whole range. */
+  amount: number
+  /** Creation timestamp (server-provided). */
+  createdAt: number
+  categoryLimits: BudgetCategoryLimit[]
+}
+
 /**
  * A simplified, directional debt: `from` owes `to` `amount`.
  * Produced by the settlement engine.

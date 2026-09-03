@@ -1,6 +1,12 @@
 import { create } from 'zustand'
-import { ME_ID, type Person, type Transaction, type User } from '../types'
-import { api, setToken, getToken, ApiError } from '../lib/api'
+import {
+  ME_ID,
+  type Budget,
+  type Person,
+  type Transaction,
+  type User,
+} from '../types'
+import { api, setToken, getToken, ApiError, type NewBudget } from '../lib/api'
 
 /**
  * Global app store — backed by the multi-user Postgres API.
@@ -17,6 +23,8 @@ interface StoreState {
   // Data (the current user's ledger view)
   people: Person[]
   transactions: Transaction[]
+  /** Spending budgets (Android-only feature). */
+  budgets: Budget[]
 
   // Async lifecycle
   loading: boolean
@@ -84,6 +92,15 @@ interface StoreState {
   ) => Promise<void>
 
   clearAll: () => Promise<void>
+
+  // Budgets
+  /**
+   * Create a budget. Rejects (throws) if the range overlaps an existing budget
+   * so the caller can surface the message inline. Does NOT trip the global
+   * connection-error banner.
+   */
+  addBudget: (budget: NewBudget) => Promise<void>
+  removeBudget: (id: string) => Promise<void>
 }
 
 export const useStore = create<StoreState>()((set, get) => {
@@ -94,7 +111,11 @@ export const useStore = create<StoreState>()((set, get) => {
 
   /** Sync data state from a ledger response, surfacing errors + handling 401. */
   const run = async (
-    fn: () => Promise<{ people: Person[]; transactions: Transaction[] }>,
+    fn: () => Promise<{
+      people: Person[]
+      transactions: Transaction[]
+      budgets?: Budget[]
+    }>,
   ) => {
     beginBusy()
     try {
@@ -102,6 +123,7 @@ export const useStore = create<StoreState>()((set, get) => {
       set({
         people: state.people,
         transactions: state.transactions,
+        budgets: state.budgets ?? [],
         error: null,
       })
     } catch (err) {
@@ -124,6 +146,7 @@ export const useStore = create<StoreState>()((set, get) => {
     authReady: false,
     people: [],
     transactions: [],
+    budgets: [],
     loading: false,
     busy: 0,
     error: null,
@@ -161,14 +184,14 @@ export const useStore = create<StoreState>()((set, get) => {
 
     logout: () => {
       setToken(null)
-      set({ user: null, people: [], transactions: [], error: null })
+      set({ user: null, people: [], transactions: [], budgets: [], error: null })
     },
 
     deleteAccount: async () => {
       await api.deleteAccount()
       // Same teardown as logout — the session is now invalid server-side.
       setToken(null)
-      set({ user: null, people: [], transactions: [], error: null })
+      set({ user: null, people: [], transactions: [], budgets: [], error: null })
     },
 
     load: async () => {
@@ -178,6 +201,7 @@ export const useStore = create<StoreState>()((set, get) => {
         set({
           people: state.people,
           transactions: state.transactions,
+          budgets: state.budgets ?? [],
           loading: false,
           error: null,
         })
@@ -224,6 +248,7 @@ export const useStore = create<StoreState>()((set, get) => {
         set({
           people: state.people,
           transactions: state.transactions,
+          budgets: state.budgets ?? [],
           error: null,
         })
       } finally {
@@ -256,6 +281,7 @@ export const useStore = create<StoreState>()((set, get) => {
         set({
           people: res.state.people,
           transactions: res.state.transactions,
+          budgets: res.state.budgets ?? [],
           error: null,
         })
         return { imported: res.imported, skipped: res.skipped }
@@ -292,6 +318,29 @@ export const useStore = create<StoreState>()((set, get) => {
 
     clearAll: async () => {
       await run(async () => (await api.clearAll()).state)
+    },
+
+    // Like linkPerson, this does NOT go through `run()`: an overlap (409) or
+    // validation error should surface inline in the budget form, not trip the
+    // global connection-error banner. We sync state on success and rethrow on
+    // failure so the component's local try/catch can display the message.
+    addBudget: async (budget) => {
+      beginBusy()
+      try {
+        const { state } = await api.addBudget(budget)
+        set({
+          people: state.people,
+          transactions: state.transactions,
+          budgets: state.budgets ?? [],
+          error: null,
+        })
+      } finally {
+        endBusy()
+      }
+    },
+
+    removeBudget: async (id) => {
+      await run(async () => (await api.removeBudget(id)).state)
     },
   }
 })

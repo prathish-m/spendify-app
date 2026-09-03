@@ -1,4 +1,4 @@
-import { ME_ID, type Transaction } from '../types'
+import { ME_ID, type Budget, type Transaction } from '../types'
 import { round2 } from './format'
 
 /**
@@ -168,6 +168,121 @@ export interface AnalyticsSummary {
   avgPerBucket: number
   topCategory: CategorySlice | null
   bucketCount: number
+}
+
+// ─── Budgets ────────────────────────────────────────────────────────────────
+
+/** A budget's default range: the first→last day of the current month (local). */
+export function currentMonthRange(): { start: string; end: string } {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() // 0-based
+  const start = `${y}-${pad(m + 1)}-01`
+  const lastDay = new Date(y, m + 1, 0).getDate() // day 0 of next month
+  const end = `${y}-${pad(m + 1)}-${pad(lastDay)}`
+  return { start, end }
+}
+
+/** Whether an ISO date falls within a budget's inclusive range. */
+function inBudgetRange(date: string, budget: Budget): boolean {
+  return date >= budget.startDate && date <= budget.endDate
+}
+
+/**
+ * Pick the budget whose range covers `date` (ranges never overlap, so at most
+ * one matches). Defaults to today. Returns null when no budget covers it.
+ */
+export function activeBudget(
+  budgets: Budget[],
+  date: string = new Date().toISOString().slice(0, 10),
+): Budget | null {
+  return budgets.find((b) => inBudgetRange(date, b)) ?? null
+}
+
+export interface CategoryBudgetProgress {
+  category: string
+  spent: number
+  /** The per-category cap, or null when this category has no explicit limit. */
+  limit: number | null
+  /** Spent minus limit (only meaningful when a limit exists). */
+  remaining: number | null
+  /** True when a limit exists and spend exceeded it. */
+  over: boolean
+}
+
+export interface BudgetProgress {
+  budget: Budget
+  /** Your total spend (expenses only, adjustments excluded) within the range. */
+  spent: number
+  /** Overall cap. */
+  limit: number
+  /** limit − spent (negative when overspent). */
+  remaining: number
+  /** Fraction 0..1+ of the cap used (can exceed 1 when overspent). */
+  ratio: number
+  /** True when total spend exceeded the overall cap. */
+  over: boolean
+  /** Per-category breakdown, largest spend first. */
+  categories: CategoryBudgetProgress[]
+}
+
+/**
+ * Compute spend progress against a budget: the overall spent-vs-cap plus a
+ * per-category breakdown (each category's spend and, when set, its own limit).
+ * Only expenses within the budget's inclusive date range are counted, using the
+ * viewer's own out-of-pocket share (adjustments excluded), mirroring the other
+ * analytics helpers.
+ */
+export function computeBudgetProgress(
+  transactions: Transaction[],
+  budget: Budget,
+): BudgetProgress {
+  const byCategory = new Map<string, number>()
+  let spent = 0
+
+  for (const t of transactions) {
+    if (t.type === 'income' || t.isAdjustment) continue
+    if (!inBudgetRange(t.date, budget)) continue
+    const amt = yourSpend(t)
+    if (amt <= 0) continue
+    spent = round2(spent + amt)
+    const cat = t.category || 'General'
+    byCategory.set(cat, round2((byCategory.get(cat) ?? 0) + amt))
+  }
+
+  const limitByCat = new Map(
+    budget.categoryLimits.map((l) => [l.category, l.amount]),
+  )
+
+  // Union of categories that were spent in OR have a defined limit, so an
+  // unspent-but-budgeted category still shows (spent 0 of its limit).
+  const cats = new Set<string>([...byCategory.keys(), ...limitByCat.keys()])
+  const categories: CategoryBudgetProgress[] = [...cats]
+    .map((category) => {
+      const catSpent = round2(byCategory.get(category) ?? 0)
+      const limit = limitByCat.has(category) ? limitByCat.get(category)! : null
+      const remaining = limit === null ? null : round2(limit - catSpent)
+      return {
+        category,
+        spent: catSpent,
+        limit,
+        remaining,
+        over: limit !== null && catSpent > limit,
+      }
+    })
+    .sort((a, b) => b.spent - a.spent)
+
+  const limit = budget.amount
+  const remaining = round2(limit - spent)
+  return {
+    budget,
+    spent,
+    limit,
+    remaining,
+    ratio: limit > 0 ? spent / limit : 0,
+    over: spent > limit,
+    categories,
+  }
 }
 
 /** Headline numbers derived from the time series + category breakdown. */

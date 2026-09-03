@@ -1,6 +1,6 @@
-import { LayoutDashboard, Home } from 'lucide-react'
+import { LayoutDashboard, Home, Wallet } from 'lucide-react'
 
-type Page = 'dashboard' | 'home'
+type Page = 'dashboard' | 'home' | 'budgets'
 
 interface BottomNavProps {
   page: Page
@@ -9,6 +9,7 @@ interface BottomNavProps {
 
 const tabs: { key: Page; label: string; icon: typeof Home }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'budgets', label: 'Budgets', icon: Wallet },
   { key: 'home', label: 'Home', icon: Home },
 ]
 
@@ -33,14 +34,18 @@ export function BottomNav({ page, onChange }: BottomNavProps) {
               key={key}
               onClick={() => onChange(key)}
               aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
                 active
                   ? 'bg-slate-900 text-white shadow-sm'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <Icon size={18} />
-              <span>{label}</span>
+              {/* Keep the label for the active tab always; show inactive labels
+                  only on wider screens so three tabs fit comfortably. */}
+              <span className={active ? '' : 'hidden sm:inline'}>
+                {label}
+              </span>
             </button>
           )
         })}
