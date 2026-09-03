@@ -1,0 +1,277 @@
+import { useState } from 'react'
+import {
+  Plus,
+  Trash2,
+  Users,
+  Link2,
+  Check,
+  X,
+  Loader2,
+  Pencil,
+} from 'lucide-react'
+import { useStore } from '../store/useStore'
+import { useConfirm } from './ui/ConfirmDialog'
+import type { Person } from '../types'
+
+/** Deterministic monochrome initials avatar. */
+function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(' ')
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+      {initials || '?'}
+    </span>
+  )
+}
+
+/**
+ * Lightweight people management: add friends/roommates you split with and
+ * remove them. Presented as a clean, borderless inline form + divided list.
+ */
+export function PeopleManager() {
+  const people = useStore((s) => s.people)
+  const addPerson = useStore((s) => s.addPerson)
+  const removePerson = useStore((s) => s.removePerson)
+  const confirm = useConfirm()
+  const [name, setName] = useState('')
+  // Prevents a double-click / rapid Enter from adding the same person twice.
+  const [adding, setAdding] = useState(false)
+
+  const confirmRemove = async (id: string, personName: string) => {
+    const ok = await confirm({
+      title: `Remove ${personName}?`,
+      message:
+        'This also removes any split expenses that involve them. This cannot be undone.',
+      confirmLabel: 'Remove',
+    })
+    if (ok) await removePerson(id)
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim() || adding) return
+    setAdding(true)
+    try {
+      await addPerson(name)
+      setName('')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+      <div className="mb-4 flex items-center gap-2">
+        <Users size={16} className="text-slate-400" />
+        <h2 className="text-sm font-semibold tracking-tight text-slate-900">
+          People
+        </h2>
+        <span className="ml-auto text-xs text-slate-400">
+          {people.length} {people.length === 1 ? 'person' : 'people'}
+        </span>
+      </div>
+
+      {/* Add form — borderless input with a subtle bottom divider. */}
+      <form onSubmit={submit} className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-3">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Add a friend or roommate…"
+          className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-0"
+        />
+        <button
+          type="submit"
+          disabled={!name.trim() || adding}
+          className="flex shrink-0 items-center gap-1 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-30"
+        >
+          {adding ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Plus size={14} />
+          )}{' '}
+          Add
+        </button>
+      </form>
+
+      {people.length === 0 ? (
+        <p className="py-4 text-center text-xs text-slate-400">
+          No people yet. Add someone to start splitting.
+        </p>
+      ) : (
+        <ul className="divide-y divide-slate-50">
+          {people.map((p) => (
+            <PersonRow
+              key={p.id}
+              person={p}
+              onRemove={() => confirmRemove(p.id, p.name)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/** A single friend row with rename + linking controls. */
+function PersonRow({
+  person,
+  onRemove,
+}: {
+  person: Person
+  onRemove: () => void
+}) {
+  const linkPerson = useStore((s) => s.linkPerson)
+  const renamePerson = useStore((s) => s.renamePerson)
+  const [linking, setLinking] = useState(false)
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Inline rename state (local display name only).
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(person.name)
+
+  const isLinked = person.linkStatus === 'accepted' && person.linkedUserId
+
+  const submitRename = async () => {
+    const next = draftName.trim()
+    if (!next || next === person.name) {
+      setRenaming(false)
+      return
+    }
+    await renamePerson(person.id, next)
+    setRenaming(false)
+  }
+
+  const submitLink = async () => {
+    if (!email.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await linkPerson(person.id, email.trim())
+      setLinking(false)
+      setEmail('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not link account')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="py-2.5">
+      <div className="flex items-center gap-3">
+        <Avatar name={person.name} />
+        <div className="min-w-0 flex-1">
+          {renaming ? (
+            <input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitRename()
+                if (e.key === 'Escape') {
+                  setDraftName(person.name)
+                  setRenaming(false)
+                }
+              }}
+              onBlur={submitRename}
+              autoFocus
+              className="w-full rounded-md border-0 bg-slate-100 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-300"
+            />
+          ) : (
+            <span className="block truncate text-sm text-slate-700">
+              {person.name}
+            </span>
+          )}
+          {isLinked && (
+            <span className="block truncate text-[11px] text-money-in">
+              Linked · {person.linkedEmail}
+            </span>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-1">
+          {/* Rename is available for local names only. A linked friend's real
+              account/email is not editable here, so we hide the pencil. */}
+          {!isLinked && !renaming && (
+            <button
+              onClick={() => {
+                setDraftName(person.name)
+                setRenaming(true)
+              }}
+              className="rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              aria-label={`Rename ${person.name}`}
+              title="Rename"
+            >
+              <Pencil size={14} />
+            </button>
+          )}
+          {isLinked ? (
+            <span
+              className="flex items-center gap-1 rounded-full bg-money-in/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-money-in"
+              title="Linked account name is managed by that user and cannot be edited here"
+            >
+              <Check size={11} /> Linked
+            </span>
+          ) : (
+            <button
+              onClick={() => setLinking((v) => !v)}
+              className="rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              aria-label={`Link ${person.name} to an account`}
+              title="Link to a real account"
+            >
+              <Link2 size={15} />
+            </button>
+          )}
+          <button
+            onClick={onRemove}
+            className="rounded-full p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-money-out"
+            aria-label={`Remove ${person.name}`}
+            title="Remove (also removes their split expenses)"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* Inline link-by-email form */}
+      {linking && !isLinked && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-slate-50 p-2">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitLink()
+              if (e.key === 'Escape') setLinking(false)
+            }}
+            placeholder="friend@email.com"
+            autoFocus
+            className="w-full border-0 bg-transparent p-0 text-xs text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-0"
+          />
+          <button
+            onClick={submitLink}
+            disabled={busy || !email.trim()}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-30"
+          >
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+            Link
+          </button>
+          <button
+            onClick={() => setLinking(false)}
+            aria-label="Cancel"
+            className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-100"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-[11px] text-money-out">{error}</p>}
+    </li>
+  )
+}

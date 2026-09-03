@@ -1,0 +1,76 @@
+name: Android APK
+
+# Builds a debug APK in the cloud (no local Android SDK needed) and uploads it
+# as a downloadable artifact. Runs on every push to main and can also be started
+# manually from the Actions tab ("Run workflow").
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      # The backend URL is read by Vite at build time. It comes from a repo
+      # variable (Settings → Secrets and variables → Actions → Variables) named
+      # VITE_API_URL, falling back to the public default if the variable is
+      # unset. Written into .env so `vite build` picks it up.
+      - name: Configure backend URL
+        run: |
+          echo "VITE_API_URL=${VITE_API_URL:-https://spendify-api.cfapps.eu10.hana.ondemand.com}" > .env
+          echo "Using VITE_API_URL=$(grep VITE_API_URL .env)"
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      # Generate the native android/ project fresh on the runner (it is not
+      # committed — see .gitignore). `cap add` is idempotent; if a project
+      # already exists it is left in place, so we only add when missing.
+      - name: Add Android platform (if missing)
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Sync web assets into Android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spendify-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
