@@ -5,13 +5,12 @@ import {
   Loader2,
   WifiOff,
   LogOut,
-  LayoutDashboard,
-  Home,
   Trash2,
   Sun,
   Moon,
   Download,
   Upload,
+  Menu,
 } from 'lucide-react'
 import { Dashboard, Settlements } from './components/Dashboard'
 import { Analytics } from './components/Analytics'
@@ -21,6 +20,8 @@ import { TransactionHistory } from './components/TransactionHistory'
 import { AuthScreen } from './components/AuthScreen'
 import { ConfirmDialog, useConfirm } from './components/ui/ConfirmDialog'
 import { GlobalBusy } from './components/ui/GlobalBusy'
+import { SideDrawer, DrawerItem } from './components/ui/SideDrawer'
+import { BottomNav } from './components/ui/BottomNav'
 import { useStore } from './store/useStore'
 import { useTheme } from './lib/theme'
 import {
@@ -41,6 +42,8 @@ type Page = 'dashboard' | 'home'
 
 export default function App() {
   const [formOpen, setFormOpen] = useState(false)
+  // Left slide-out menu holding export/import/theme/delete/logout actions.
+  const [drawerOpen, setDrawerOpen] = useState(false)
   // Which page is showing. Dashboard = balance cards + analytics charts.
   // Home = settlements, transaction history and people.
   const [page, setPage] = useState<Page>('dashboard')
@@ -188,6 +191,16 @@ export default function App() {
       {/* Top bar */}
       <header className="sticky top-0 z-20 border-b border-slate-100 bg-neutral-50/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center gap-2 px-5 py-4">
+          {/* Menu button opens the left slide-out drawer */}
+          <button
+            onClick={() => setDrawerOpen(true)}
+            title="Menu"
+            aria-label="Open menu"
+            className="-ml-1 rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          >
+            <Menu size={20} />
+          </button>
+
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
             <Wallet size={16} />
           </span>
@@ -198,32 +211,6 @@ export default function App() {
             {user.name}
           </span>
 
-          {/* Page navigation */}
-          <nav className="ml-4 flex items-center gap-1 rounded-full bg-slate-100 p-1">
-            <button
-              onClick={() => setPage('dashboard')}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                page === 'dashboard'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <LayoutDashboard size={14} />
-              <span className="hidden sm:inline">Dashboard</span>
-            </button>
-            <button
-              onClick={() => setPage('home')}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                page === 'home'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Home size={14} />
-              <span className="hidden sm:inline">Home</span>
-            </button>
-          </nav>
-
           <div className="ml-auto flex items-center gap-2">
             {/* Desktop add button */}
             <button
@@ -232,57 +219,65 @@ export default function App() {
             >
               <Plus size={15} /> Add Expense
             </button>
-            <button
-              onClick={handleExport}
-              disabled={transactions.length === 0}
-              title="Export backup"
-              aria-label="Export backup"
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-            >
-              <Download size={16} />
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              title="Import backup"
-              aria-label="Import backup"
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            >
-              <Upload size={16} />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={onFilePicked}
-            />
-            <button
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-              aria-label="Toggle theme"
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            >
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button
-              onClick={handleDeleteAccount}
-              title="Delete account"
-              aria-label="Delete account"
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-money-out"
-            >
-              <Trash2 size={16} />
-            </button>
-            <button
-              onClick={handleLogout}
-              title="Sign out"
-              aria-label="Sign out"
-              className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            >
-              <LogOut size={16} />
-            </button>
           </div>
+
+          {/* Hidden file input reused by the drawer's Import action */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onFilePicked}
+          />
         </div>
       </header>
+
+      {/* Left slide-out menu: import / export / theme / delete / logout */}
+      <SideDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Menu"
+      >
+        <DrawerItem
+          icon={<Download size={18} />}
+          label="Export backup"
+          disabled={transactions.length === 0}
+          onClick={() => {
+            setDrawerOpen(false)
+            void handleExport()
+          }}
+        />
+        <DrawerItem
+          icon={<Upload size={18} />}
+          label="Import backup"
+          onClick={() => {
+            setDrawerOpen(false)
+            fileInputRef.current?.click()
+          }}
+        />
+        <DrawerItem
+          icon={theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          label={theme === 'dark' ? 'Light theme' : 'Dark theme'}
+          onClick={toggleTheme}
+        />
+        <DrawerItem
+          icon={<Trash2 size={18} />}
+          label="Delete account"
+          destructive
+          onClick={() => {
+            setDrawerOpen(false)
+            void handleDeleteAccount()
+          }}
+        />
+        <DrawerItem
+          icon={<LogOut size={18} />}
+          label="Sign out"
+          onClick={() => {
+            setDrawerOpen(false)
+            void handleLogout()
+          }}
+        />
+      </SideDrawer>
 
       {/* Connection error banner */}
       {error && (
@@ -299,7 +294,10 @@ export default function App() {
       )}
 
       {/* Content */}
-      <main className="mx-auto max-w-5xl px-5 py-6 pb-28 sm:pb-10">
+      <main
+        className="mx-auto max-w-5xl px-5 py-6"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 7rem)' }}
+      >
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
             <Loader2 size={22} className="animate-spin" />
@@ -328,14 +326,20 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating add button (mobile) */}
+      {/* Floating add button (mobile). Raised above the bottom nav so the two
+          floating controls never overlap; safe-area inset keeps it clear of the
+          Android gesture bar. */}
       <button
         onClick={() => setFormOpen(true)}
-        className="fixed right-5 bottom-5 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition-transform active:scale-95 sm:hidden"
+        className="fixed right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg transition-transform active:scale-95 sm:hidden"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 5.5rem)' }}
         aria-label="Add expense"
       >
         <Plus size={24} />
       </button>
+
+      {/* Floating bottom navigation (Dashboard / Home) */}
+      <BottomNav page={page} onChange={setPage} />
 
       <TransactionForm open={formOpen} onClose={() => setFormOpen(false)} />
 

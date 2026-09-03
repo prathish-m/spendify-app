@@ -64,6 +64,30 @@ When the run finishes (green check, ~3–6 min), open the run and scroll to
 
 ---
 
+## App icon
+
+The launcher icon is generated during the build from a committed SVG source
+(`resources/icon.svg`) — a dark Spendify tile with a green wallet + "S" mark.
+The workflow rasterizes it to `resources/icon.png` and runs
+`npx capacitor-assets generate --android` to produce every Android density
+bucket + adaptive icon. To change the icon, edit `resources/icon.svg` (or drop
+your own 1024×1024 `resources/icon.png`) and push — the next build picks it up.
+
+---
+
+## Android-only UI
+
+This Capacitor build has a mobile-tuned shell (the web app in
+`../expense-splitter/` is unchanged):
+
+- **Left slide-out menu** (hamburger, top-left) holds Export, Import, Theme,
+  Delete account and Sign out.
+- **Floating glassy bottom navigation** switches between Dashboard and Home.
+- The floating **＋ Add** button sits above the bottom nav; both respect the
+  Android gesture-bar safe area.
+
+---
+
 ## Troubleshooting
 
 - **Network/login fails in the app:** the phone must reach the backend URL.

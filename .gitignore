@@ -16,6 +16,10 @@ android/
 .gradle/
 *.keystore
 
+# Raster icon generated from resources/icon.svg during the build (the SVG
+# source is committed; the PNG is produced in CI).
+resources/icon.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

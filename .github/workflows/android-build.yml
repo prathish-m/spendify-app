@@ -59,6 +59,15 @@ jobs:
             npx cap add android
           fi
 
+      # Generate the app icon. The committed SVG source (resources/icon.svg) is
+      # rasterized to resources/icon.png with sharp (bundled by
+      # @capacitor/assets), then capacitor-assets generates every Android
+      # density bucket + adaptive icon into the native project.
+      - name: Generate app icon
+        run: |
+          node -e "const sharp=require('sharp');sharp('resources/icon.svg',{density:512}).resize(1024,1024).png().toFile('resources/icon.png').then(()=>console.log('icon.png generated')).catch(e=>{console.error(e);process.exit(1)})"
+          npx capacitor-assets generate --android --iconBackgroundColor '#0a0a0a' --iconBackgroundColorDark '#0a0a0a'
+
       - name: Sync web assets into Android
         run: npx cap sync android
 

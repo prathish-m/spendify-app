@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spendify app icon source (1024x1024).
+
+  A full-bleed dark brand tile (near-black #0a0a0a canvas, matching the app's
+  dark theme) with a wallet silhouette and a stylized green "S" money mark. The
+  build converts this SVG to resources/icon.png, then @capacitor/assets
+  generates every Android density bucket + adaptive icon from it.
+
+  Kept full-bleed (no transparent padding) so it also works as an adaptive-icon
+  foreground/background source; the mark sits inside the safe center zone.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="#0a0a0a"/>
+
+  <!-- Subtle radial glow behind the mark -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="42%" r="55%">
+      <stop offset="0%" stop-color="#134e3a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6ee7b7"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <!-- Wallet body -->
+  <rect x="248" y="330" width="528" height="380" rx="72"
+        fill="none" stroke="url(#accent)" stroke-width="42"/>
+  <!-- Wallet clasp / card slot -->
+  <rect x="592" y="470" width="220" height="112" rx="56"
+        fill="#0a0a0a" stroke="url(#accent)" stroke-width="42"/>
+  <circle cx="690" cy="526" r="26" fill="url(#accent)"/>
+
+  <!-- Stylized "S" money mark centered on the wallet -->
+  <path d="M470 430
+           c-70 0 -118 34 -118 92
+           c0 58 48 78 112 92
+           c46 10 66 18 66 40
+           c0 22 -26 34 -62 34
+           c-40 0 -70 -14 -92 -36"
+        fill="none" stroke="url(#accent)" stroke-width="40"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
