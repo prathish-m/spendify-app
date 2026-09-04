@@ -29,11 +29,17 @@ export function FullScreenSheet({
       if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
+    // Lock BOTH <body> and <html>: on Android WebView the scrolling container
+    // is often the documentElement, so locking body alone lets the page behind
+    // the sheet still scroll.
+    const prevBody = document.body.style.overflow
+    const prevHtml = document.documentElement.style.overflow
     document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
+      document.body.style.overflow = prevBody
+      document.documentElement.style.overflow = prevHtml
     }
   }, [open, onClose])
 

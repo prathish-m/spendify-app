@@ -24,6 +24,7 @@ import { GlobalBusy } from './components/ui/GlobalBusy'
 import { SideDrawer, DrawerItem } from './components/ui/SideDrawer'
 import { BottomNav } from './components/ui/BottomNav'
 import { PageTransition } from './components/ui/PageTransition'
+import { PullToRefresh } from './components/ui/PullToRefresh'
 import { useStore } from './store/useStore'
 import { useTheme } from './lib/theme'
 import {
@@ -330,6 +331,7 @@ export default function App() {
             <span className="text-xs">Loading your data…</span>
           </div>
         ) : (
+          <PullToRefresh onRefresh={() => load()}>
           <PageTransition pageKey={page} direction={navDirection}>
             {page === 'dashboard' ? (
               /* Dashboard page: balance cards + analytics charts. */
@@ -356,6 +358,7 @@ export default function App() {
               </div>
             )}
           </PageTransition>
+          </PullToRefresh>
         )}
       </main>
 

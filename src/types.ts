@@ -178,3 +178,48 @@ export interface Settlement {
   to: string
   amount: number
 }
+
+/** How interest accrues on a loan. */
+export type LoanInterestType = 'none' | 'simple' | 'compound'
+
+/** Whether the loan is money you lent out or borrowed. */
+export type LoanDirection = 'lent' | 'borrowed'
+
+/** A single (partial) repayment recorded against a loan. */
+export interface LoanRepayment {
+  id: string
+  amount: number
+  /** ISO date (YYYY-MM-DD). */
+  date: string
+}
+
+/**
+ * Money you lent to (or borrowed from) a friend, optionally accruing interest.
+ * The current amount due is derived on the client from the principal, rate,
+ * type and start date (see lib/loans.ts), minus recorded repayments. Two-sided
+ * for linked friends: the counterparty sees the loan with the opposite
+ * `direction` (`sharedByMe` true on their side).
+ */
+export interface Loan {
+  id: string
+  /** Counterparty in the viewer's vocabulary (a friend id). */
+  personId: string
+  /** 'lent' = they owe you; 'borrowed' = you owe them. */
+  direction: LoanDirection
+  principal: number
+  interestType: LoanInterestType
+  /** Annual percentage rate (e.g. 12 = 12%/yr). 0 when interestType='none'. */
+  ratePct: number
+  /** Compounding frequency per year for compound interest (12 = monthly). */
+  compoundsPerYear: number
+  /** ISO start date the interest accrues from (YYYY-MM-DD). */
+  startDate: string
+  description: string
+  status: 'open' | 'settled'
+  repayments: LoanRepayment[]
+  createdAt: number
+  /** Server-provided id of the account that created the loan. */
+  ownerId?: string
+  /** True when a linked friend created this loan against you. */
+  sharedByMe?: boolean
+}

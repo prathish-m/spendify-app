@@ -1,4 +1,12 @@
-import type { Budget, Person, Transaction, User } from '../types'
+import type {
+  Budget,
+  Loan,
+  LoanDirection,
+  LoanInterestType,
+  Person,
+  Transaction,
+  User,
+} from '../types'
 
 /**
  * API client for the Node.js + Postgres backend.
@@ -41,6 +49,20 @@ export interface AppState {
    * compatible with any state payload that predates the feature.
    */
   budgets?: Budget[]
+  /** Loans (lend/borrow with optional interest). Optional for old payloads. */
+  loans?: Loan[]
+}
+
+/** Payload for creating a loan. */
+export interface NewLoan {
+  personId: string
+  direction: LoanDirection
+  principal: number
+  interestType: LoanInterestType
+  ratePct: number
+  compoundsPerYear: number
+  startDate: string
+  description?: string
 }
 
 /** Payload for creating a budget. */
@@ -121,6 +143,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
+
+  /** Merge contact `id` into `intoId` (folds a duplicate onto the survivor). */
+  mergePerson: (id: string, intoId: string) =>
+    request<{ state: AppState }>(`/people/${id}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ intoId }),
+    }),
+
+  // ── Loans ──
+  createLoan: (loan: NewLoan) =>
+    request<{ state: AppState }>('/loans', {
+      method: 'POST',
+      body: JSON.stringify(loan),
+    }),
+
+  /** Record a (partial) repayment against a loan. */
+  repayLoan: (id: string, amount: number, date?: string) =>
+    request<{ state: AppState }>(`/loans/${id}/repay`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, ...(date ? { date } : {}) }),
+    }),
+
+  removeLoan: (id: string) =>
+    request<{ state: AppState }>(`/loans/${id}`, { method: 'DELETE' }),
 
   /**
    * Record money a person repaid you (settle up). Raises your Personal Balance

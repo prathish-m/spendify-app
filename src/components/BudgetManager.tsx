@@ -44,6 +44,8 @@ export function BudgetManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   // Full-screen "see all past budgets" sheet.
   const [showAllPast, setShowAllPast] = useState(false)
+  // Full-screen "see all current/upcoming budgets" sheet.
+  const [showAllActive, setShowAllActive] = useState(false)
   // When set, shows the details modal for this budget (category breakdown).
   const [detailsBudget, setDetailsBudget] = useState<Budget | null>(null)
 
@@ -101,14 +103,14 @@ export function BudgetManager() {
       setError('Pick a start and end date.')
       return
     }
-    if (to < from) {
-      setError('End date must not be before the start date.')
-      return
-    }
     if (!Number.isFinite(amt) || amt <= 0) {
       setError('Enter a budget amount greater than zero.')
       return
     }
+    // The pickers are independent, so the user may have set an end date before
+    // the start. Normalize the order rather than forcing them to re-pick.
+    const startDate = from <= to ? from : to
+    const endDate = from <= to ? to : from
 
     // Collapse per-category limits, summing duplicates, dropping blanks.
     const merged = new Map<string, number>()
@@ -119,8 +121,8 @@ export function BudgetManager() {
       merged.set(cat, (merged.get(cat) ?? 0) + n)
     }
     const payload: NewBudget = {
-      startDate: from,
-      endDate: to,
+      startDate,
+      endDate,
       amount: amt,
       categoryLimits: [...merged.entries()].map(([category, a]) => ({
         category,
@@ -164,6 +166,7 @@ export function BudgetManager() {
   const activeOrUpcoming = sorted.filter((b) => b.endDate >= today)
   const past = sorted.filter((b) => b.endDate < today)
   const pastPreview = past.slice(0, 5)
+  const activePreview = activeOrUpcoming.slice(0, 5)
 
   return (
     <section className="space-y-4">
@@ -197,15 +200,13 @@ export function BudgetManager() {
           </span>
           <DatePicker
             value={from}
-            max={to || undefined}
             onChange={setFrom}
             placeholder="From"
             ariaLabel="Budget start date"
           />
-          <span className="text-slate-300">â†’</span>
+          <span className="text-slate-300">→</span>
           <DatePicker
             value={to}
-            min={from || undefined}
             onChange={setTo}
             placeholder="To"
             ariaLabel="Budget end date"
@@ -292,7 +293,7 @@ export function BudgetManager() {
           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
         >
           <Plus size={15} />{' '}
-          {saving ? 'Savingâ€¦' : editingId ? 'Save changes' : 'Create budget'}
+          {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create budget'}
         </button>
       </div>
 
@@ -305,10 +306,21 @@ export function BudgetManager() {
         <>
           {activeOrUpcoming.length > 0 && (
             <div className="space-y-2">
-              <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                Current & upcoming
-              </span>
-              {activeOrUpcoming.map((b) => (
+              <div className="flex items-center justify-between">
+                <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                  Current & upcoming
+                </span>
+                {activeOrUpcoming.length > activePreview.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllActive(true)}
+                    className="rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    See more ({activeOrUpcoming.length})
+                  </button>
+                )}
+              </div>
+              {activePreview.map((b) => (
                 <BudgetCard
                   key={b.id}
                   budget={b}
@@ -375,6 +387,29 @@ export function BudgetManager() {
         </div>
       </FullScreenSheet>
 
+      {/* Full-screen: all current/upcoming budgets */}
+      <FullScreenSheet
+        open={showAllActive}
+        onClose={() => setShowAllActive(false)}
+        title="Current & upcoming budgets"
+      >
+        <div className="space-y-2">
+          {activeOrUpcoming.map((b) => (
+            <BudgetCard
+              key={b.id}
+              budget={b}
+              transactions={transactions}
+              onOpen={() => setDetailsBudget(b)}
+              onEdit={() => {
+                setShowAllActive(false)
+                startEdit(b)
+              }}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      </FullScreenSheet>
+
       {/* Budget details: per-category breakdown */}
       <FullScreenSheet
         open={detailsBudget !== null}
@@ -405,7 +440,7 @@ function BudgetDetails({
     () => computeBudgetProgress(transactions, budget),
     [transactions, budget],
   )
-  const label = `${formatDate(budget.startDate)} â€“ ${formatDate(budget.endDate)}`
+  const label = `${formatDate(budget.startDate)} — ${formatDate(budget.endDate)}`
   // Assign a stable palette color to each spent category (spend-sorted order),
   // so the segmented overall bar and the per-category rows below share colors.
   const colorByCat = useMemo(() => {

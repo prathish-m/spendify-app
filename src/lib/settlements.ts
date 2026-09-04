@@ -186,11 +186,16 @@ export interface PersonalBalance {
 }
 
 /**
- * Your personal cash flow.
+ * Your personal cash flow (real cash-in-hand model).
  *
- * Spending = everything you actually consumed:
+ * Personal Balance tracks the money that actually moved through YOUR account,
+ * not your "fair share" of a bill:
  *  - full amount of personal (non-split) expenses you logged, plus
- *  - your own share of any split bills.
+ *  - the FULL amount of any split bill YOU fronted (you are the payer) — even
+ *    though it's split. The other participants repay you later, and those
+ *    repayments come back as income via the settle-up flow.
+ *  - a split bill SOMEONE ELSE paid contributes 0 here (no cash left your
+ *    account; you owe your share, which shows under settlements instead).
  * Income = the full amount of every 'income' entry.
  * Net reflects money in minus money out.
  */
@@ -213,10 +218,11 @@ export function computePersonalBalance(
     // Expense (default).
     if (!t.isSplit) {
       spend += t.amount
-    } else {
-      const myShare = t.shares.find((s) => s.personId === ME_ID)
-      if (myShare) spend += myShare.amount
+    } else if (t.paidBy === ME_ID) {
+      // You fronted a split bill → the whole amount left your account.
+      spend += t.amount
     }
+    // else: someone else paid this split → no cash out of your account here.
   }
 
   income = round2(income)

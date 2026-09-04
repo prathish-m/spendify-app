@@ -2,11 +2,19 @@ import { create } from 'zustand'
 import {
   ME_ID,
   type Budget,
+  type Loan,
   type Person,
   type Transaction,
   type User,
 } from '../types'
-import { api, setToken, getToken, ApiError, type NewBudget } from '../lib/api'
+import {
+  api,
+  setToken,
+  getToken,
+  ApiError,
+  type NewBudget,
+  type NewLoan,
+} from '../lib/api'
 
 /**
  * Global app store — backed by the multi-user Postgres API.
@@ -25,6 +33,8 @@ interface StoreState {
   transactions: Transaction[]
   /** Spending budgets (Android-only feature). */
   budgets: Budget[]
+  /** Loans (lend/borrow with optional interest). */
+  loans: Loan[]
 
   // Async lifecycle
   loading: boolean
@@ -55,6 +65,15 @@ interface StoreState {
   removePerson: (id: string) => Promise<void>
   /** Link a friend contact to a real account by email. */
   linkPerson: (id: string, email: string) => Promise<void>
+  /** Merge one contact into another (folds a duplicate onto the survivor). */
+  mergePerson: (id: string, intoId: string) => Promise<void>
+
+  // Loans
+  /** Create a loan (lend/borrow with optional interest) against a friend. */
+  createLoan: (loan: NewLoan) => Promise<void>
+  /** Record a (partial) repayment against a loan. */
+  repayLoan: (id: string, amount: number, date?: string) => Promise<void>
+  removeLoan: (id: string) => Promise<void>
 
   // Transactions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>
@@ -111,23 +130,34 @@ export const useStore = create<StoreState>()((set, get) => {
   /** Release one in-flight action; never drops below zero. */
   const endBusy = () => set((s) => ({ busy: Math.max(0, s.busy - 1) }))
 
+  /** Apply a ledger response to the store (all data slices in one place). */
+  const applyState = (state: {
+    people: Person[]
+    transactions: Transaction[]
+    budgets?: Budget[]
+    loans?: Loan[]
+  }) =>
+    set({
+      people: state.people,
+      transactions: state.transactions,
+      budgets: state.budgets ?? [],
+      loans: state.loans ?? [],
+      error: null,
+    })
+
   /** Sync data state from a ledger response, surfacing errors + handling 401. */
   const run = async (
     fn: () => Promise<{
       people: Person[]
       transactions: Transaction[]
       budgets?: Budget[]
+      loans?: Loan[]
     }>,
   ) => {
     beginBusy()
     try {
       const state = await fn()
-      set({
-        people: state.people,
-        transactions: state.transactions,
-        budgets: state.budgets ?? [],
-        error: null,
-      })
+      applyState(state)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         // Session expired → drop to login screen.
@@ -149,6 +179,7 @@ export const useStore = create<StoreState>()((set, get) => {
     people: [],
     transactions: [],
     budgets: [],
+    loans: [],
     loading: false,
     busy: 0,
     error: null,
@@ -186,14 +217,28 @@ export const useStore = create<StoreState>()((set, get) => {
 
     logout: () => {
       setToken(null)
-      set({ user: null, people: [], transactions: [], budgets: [], error: null })
+      set({
+        user: null,
+        people: [],
+        transactions: [],
+        budgets: [],
+        loans: [],
+        error: null,
+      })
     },
 
     deleteAccount: async () => {
       await api.deleteAccount()
       // Same teardown as logout — the session is now invalid server-side.
       setToken(null)
-      set({ user: null, people: [], transactions: [], budgets: [], error: null })
+      set({
+        user: null,
+        people: [],
+        transactions: [],
+        budgets: [],
+        loans: [],
+        error: null,
+      })
     },
 
     load: async () => {
@@ -204,6 +249,7 @@ export const useStore = create<StoreState>()((set, get) => {
           people: state.people,
           transactions: state.transactions,
           budgets: state.budgets ?? [],
+          loans: state.loans ?? [],
           loading: false,
           error: null,
         })
@@ -247,15 +293,48 @@ export const useStore = create<StoreState>()((set, get) => {
       beginBusy()
       try {
         const { state } = await api.linkPerson(id, email)
-        set({
-          people: state.people,
-          transactions: state.transactions,
-          budgets: state.budgets ?? [],
-          error: null,
-        })
+        applyState(state)
       } finally {
         endBusy()
       }
+    },
+
+    // Merge folds a duplicate contact onto the survivor. Inline (like link) so
+    // any validation error surfaces next to the action, not the global banner.
+    mergePerson: async (id, intoId) => {
+      beginBusy()
+      try {
+        const { state } = await api.mergePerson(id, intoId)
+        applyState(state)
+      } finally {
+        endBusy()
+      }
+    },
+
+    // Loans go through inline sync so a validation error (invalid friend/amount)
+    // can surface next to the form rather than the global connection banner.
+    createLoan: async (loan) => {
+      beginBusy()
+      try {
+        const { state } = await api.createLoan(loan)
+        applyState(state)
+      } finally {
+        endBusy()
+      }
+    },
+
+    repayLoan: async (id, amount, date) => {
+      beginBusy()
+      try {
+        const { state } = await api.repayLoan(id, amount, date)
+        applyState(state)
+      } finally {
+        endBusy()
+      }
+    },
+
+    removeLoan: async (id) => {
+      await run(async () => (await api.removeLoan(id)).state)
     },
 
     addTransaction: async (tx) => {
@@ -280,12 +359,7 @@ export const useStore = create<StoreState>()((set, get) => {
         // Single idempotent request; the server dedups by original id and
         // returns the refreshed ledger plus imported/skipped counts.
         const res = await api.importBackup(txs)
-        set({
-          people: res.state.people,
-          transactions: res.state.transactions,
-          budgets: res.state.budgets ?? [],
-          error: null,
-        })
+        applyState(res.state)
         return { imported: res.imported, skipped: res.skipped }
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
@@ -330,12 +404,7 @@ export const useStore = create<StoreState>()((set, get) => {
       beginBusy()
       try {
         const { state } = await api.addBudget(budget)
-        set({
-          people: state.people,
-          transactions: state.transactions,
-          budgets: state.budgets ?? [],
-          error: null,
-        })
+        applyState(state)
       } finally {
         endBusy()
       }
@@ -345,12 +414,7 @@ export const useStore = create<StoreState>()((set, get) => {
       beginBusy()
       try {
         const { state } = await api.updateBudget(id, budget)
-        set({
-          people: state.people,
-          transactions: state.transactions,
-          budgets: state.budgets ?? [],
-          error: null,
-        })
+        applyState(state)
       } finally {
         endBusy()
       }

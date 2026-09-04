@@ -8,9 +8,13 @@ import {
   X,
   Loader2,
   Pencil,
+  Merge,
+  ChevronRight,
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { useConfirm } from './ui/ConfirmDialog'
+import { FullScreenSheet } from './ui/FullScreenSheet'
+import { FriendDetail } from './FriendDetail'
 import type { Person } from '../types'
 
 /** Deterministic monochrome initials avatar. */
@@ -41,6 +45,8 @@ export function PeopleManager() {
   const [name, setName] = useState('')
   // Prevents a double-click / rapid Enter from adding the same person twice.
   const [adding, setAdding] = useState(false)
+  // When set, opens the per-friend detail sheet (splits + loans).
+  const [detailPerson, setDetailPerson] = useState<Person | null>(null)
 
   const confirmRemove = async (id: string, personName: string) => {
     const ok = await confirm({
@@ -108,26 +114,43 @@ export function PeopleManager() {
             <PersonRow
               key={p.id}
               person={p}
+              allPeople={people}
               onRemove={() => confirmRemove(p.id, p.name)}
+              onOpen={() => setDetailPerson(p)}
             />
           ))}
         </ul>
       )}
+
+      {/* Per-friend detail: splits + loans + combined balance. */}
+      <FullScreenSheet
+        open={detailPerson !== null}
+        onClose={() => setDetailPerson(null)}
+        title={detailPerson ? detailPerson.name : 'Friend'}
+      >
+        {detailPerson && <FriendDetail personId={detailPerson.id} />}
+      </FullScreenSheet>
     </section>
   )
 }
 
-/** A single friend row with rename + linking controls. */
+/** A single friend row with rename + linking + merge controls. */
 function PersonRow({
   person,
+  allPeople,
   onRemove,
+  onOpen,
 }: {
   person: Person
+  allPeople: Person[]
   onRemove: () => void
+  onOpen: () => void
 }) {
   const linkPerson = useStore((s) => s.linkPerson)
   const renamePerson = useStore((s) => s.renamePerson)
+  const mergePerson = useStore((s) => s.mergePerson)
   const [linking, setLinking] = useState(false)
+  const [merging, setMerging] = useState(false)
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -137,6 +160,20 @@ function PersonRow({
   const [draftName, setDraftName] = useState(person.name)
 
   const isLinked = person.linkStatus === 'accepted' && person.linkedUserId
+  const mergeTargets = allPeople.filter((p) => p.id !== person.id)
+
+  const submitMerge = async (intoId: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await mergePerson(person.id, intoId)
+      setMerging(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not merge contacts')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submitRename = async () => {
     const next = draftName.trim()
@@ -184,9 +221,18 @@ function PersonRow({
               className="w-full rounded-md border-0 bg-slate-100 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-300"
             />
           ) : (
-            <span className="block truncate text-sm text-slate-700">
-              {person.name}
-            </span>
+            // Tap the name to open the per-friend detail (splits + loans).
+            <button
+              type="button"
+              onClick={onOpen}
+              className="flex w-full items-center gap-1 text-left"
+              aria-label={`View details for ${person.name}`}
+            >
+              <span className="block truncate text-sm text-slate-700">
+                {person.name}
+              </span>
+              <ChevronRight size={13} className="shrink-0 text-slate-300" />
+            </button>
           )}
           {isLinked && (
             <span className="block truncate text-[11px] text-money-in">
@@ -196,9 +242,10 @@ function PersonRow({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          {/* Rename is available for local names only. A linked friend's real
-              account/email is not editable here, so we hide the pencil. */}
-          {!isLinked && !renaming && (
+          {/* Rename edits your LOCAL display name. It's allowed even for linked
+              friends — it only relabels your own reference, never their real
+              account (the server's renameFriend preserves the link). */}
+          {!renaming && (
             <button
               onClick={() => {
                 setDraftName(person.name)
@@ -206,15 +253,26 @@ function PersonRow({
               }}
               className="rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600"
               aria-label={`Rename ${person.name}`}
-              title="Rename"
+              title="Rename (your local label)"
             >
               <Pencil size={14} />
+            </button>
+          )}
+          {/* Merge this contact into another (fold a duplicate onto a survivor). */}
+          {mergeTargets.length > 0 && (
+            <button
+              onClick={() => setMerging((v) => !v)}
+              className="rounded-full p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              aria-label={`Merge ${person.name} into another contact`}
+              title="Merge into another contact"
+            >
+              <Merge size={15} />
             </button>
           )}
           {isLinked ? (
             <span
               className="flex items-center gap-1 rounded-full bg-money-in/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-money-in"
-              title="Linked account name is managed by that user and cannot be edited here"
+              title="Linked to a real account"
             >
               <Check size={11} /> Linked
             </span>
@@ -269,6 +327,35 @@ function PersonRow({
           >
             <X size={13} />
           </button>
+        </div>
+      )}
+      {/* Inline merge picker: choose which contact to fold this one into. */}
+      {merging && mergeTargets.length > 0 && (
+        <div className="mt-2 rounded-lg bg-slate-50 p-2">
+          <p className="mb-1.5 px-1 text-[11px] text-slate-500">
+            Merge <span className="font-medium">{person.name}</span> into…
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {mergeTargets.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                disabled={busy}
+                onClick={() => submitMerge(t.id)}
+                className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 disabled:opacity-40"
+              >
+                {t.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setMerging(false)}
+              aria-label="Cancel merge"
+              className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
+            >
+              <X size={13} />
+            </button>
+          </div>
         </div>
       )}
       {error && <p className="mt-1 text-[11px] text-money-out">{error}</p>}

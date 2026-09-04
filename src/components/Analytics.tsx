@@ -514,9 +514,14 @@ export function Analytics() {
   // aggregation. Date bounds are inclusive; either can be left blank for an
   // open-ended range.
   const inRange = useMemo(() => {
+    // The two date pickers are independent (either can be set first), so the
+    // user may pick an end date earlier than the start. Normalize to the
+    // lower/upper bound here so the range is always valid regardless of order.
+    const lo = from && to ? (from <= to ? from : to) : from
+    const hi = from && to ? (from <= to ? to : from) : to
     return transactions.filter((t) => {
-      if (from && t.date < from) return false
-      if (to && t.date > to) return false
+      if (lo && t.date < lo) return false
+      if (hi && t.date > hi) return false
       if (excludeSplits && t.isSplit) return false
       if (excludedCategories.has(t.category || 'General')) return false
       return true
@@ -568,7 +573,6 @@ export function Analytics() {
         </span>
         <DatePicker
           value={from}
-          max={to || undefined}
           onChange={setFrom}
           placeholder="From"
           ariaLabel="From date"
@@ -576,7 +580,6 @@ export function Analytics() {
         <span className="text-slate-300">→</span>
         <DatePicker
           value={to}
-          min={from || undefined}
           onChange={setTo}
           placeholder="To"
           ariaLabel="To date"
@@ -654,7 +657,7 @@ export function Analytics() {
                       key={cat}
                       type="button"
                       onClick={() => toggleCategory(cat)}
-                      className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                      className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
                         excluded
                           ? 'bg-money-out/10 text-money-out line-through'
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

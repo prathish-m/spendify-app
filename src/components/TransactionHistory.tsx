@@ -180,16 +180,6 @@ export function TransactionHistory() {
           {transactions.length}{' '}
           {transactions.length === 1 ? 'entry' : 'entries'}
         </span>
-
-        {hasMore && (
-          <button
-            type="button"
-            onClick={openAll}
-            className="ml-auto rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
-          >
-            See more
-          </button>
-        )}
       </div>
 
       {/* Compact preview: the latest few, tap to open details. */}
@@ -357,7 +347,7 @@ function Row({
 
   return (
     <li
-      className={`group flex items-center gap-3 rounded-lg py-3 transition-colors ${
+      className={`group flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg py-3 transition-colors ${
         selectMode ? 'cursor-pointer' : 'cursor-pointer hover:bg-slate-50'
       } ${selected ? 'bg-slate-50' : ''}`}
       onClick={selectMode ? onToggleSelect : onOpen}
@@ -503,13 +493,15 @@ function Row({
       {!selectMode &&
         (isPending ? (
           // Shared split awaiting your response: Accept / Reject your share.
-          <div className="flex shrink-0 items-center gap-1">
+          // `basis-full` pushes this cluster onto its own line (the row wraps),
+          // so on narrow Android screens it never overlaps the amount/label.
+          <div className="flex basis-full items-center justify-end gap-2">
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 onAccept()
               }}
-              className="flex items-center gap-1 rounded-full bg-money-in px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-1 rounded-full bg-money-in px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
               aria-label={`Accept ${tx.description}`}
             >
               <Check size={12} /> Accept
@@ -519,7 +511,7 @@ function Row({
                 e.stopPropagation()
                 onReject()
               }}
-              className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-red-50 hover:text-money-out"
+              className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-red-50 hover:text-money-out"
               aria-label={`Reject ${tx.description}`}
             >
               <X size={12} /> Reject
