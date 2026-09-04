@@ -414,7 +414,7 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
         {/* Count toward budget — expenses only (income never counts). */}
         {!isIncome && (
           <div className="border-b border-slate-100 py-3">
-            <label className="flex cursor-pointer items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-slate-700">
                   Count toward budget
@@ -423,13 +423,23 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
                   Turn off to exclude this expense from budgets
                 </span>
               </span>
-              <input
-                type="checkbox"
-                checked={includeInBudget}
-                onChange={(e) => setIncludeInBudget(e.target.checked)}
-                className="h-5 w-5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
-              />
-            </label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includeInBudget}
+                aria-label="Count toward budget"
+                onClick={() => setIncludeInBudget((v) => !v)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+                  includeInBudget ? 'bg-slate-900' : 'bg-slate-100'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-neutral-100 shadow-sm transition-transform ${
+                    includeInBudget ? 'translate-x-[22px]' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         )}
 

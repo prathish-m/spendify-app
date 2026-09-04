@@ -43,6 +43,8 @@ export function BudgetManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   // Full-screen "see all past budgets" sheet.
   const [showAllPast, setShowAllPast] = useState(false)
+  // When set, shows the details modal for this budget (category breakdown).
+  const [detailsBudget, setDetailsBudget] = useState<Budget | null>(null)
 
   const nextKey = useMemo(() => {
     let k = 1
@@ -206,6 +208,7 @@ export function BudgetManager() {
             onChange={setTo}
             placeholder="To"
             ariaLabel="Budget end date"
+            align="right"
           />
         </div>
 
@@ -309,6 +312,7 @@ export function BudgetManager() {
                   key={b.id}
                   budget={b}
                   transactions={transactions}
+                  onOpen={() => setDetailsBudget(b)}
                   onEdit={() => startEdit(b)}
                   onDelete={handleDelete}
                 />
@@ -337,6 +341,7 @@ export function BudgetManager() {
                   key={b.id}
                   budget={b}
                   transactions={transactions}
+                  onOpen={() => setDetailsBudget(b)}
                   onEdit={() => startEdit(b)}
                   onDelete={handleDelete}
                 />
@@ -358,6 +363,7 @@ export function BudgetManager() {
               key={b.id}
               budget={b}
               transactions={transactions}
+              onOpen={() => setDetailsBudget(b)}
               onEdit={() => {
                 setShowAllPast(false)
                 startEdit(b)
@@ -367,7 +373,125 @@ export function BudgetManager() {
           ))}
         </div>
       </FullScreenSheet>
+
+      {/* Budget details: per-category breakdown */}
+      <FullScreenSheet
+        open={detailsBudget !== null}
+        onClose={() => setDetailsBudget(null)}
+        title="Budget details"
+      >
+        {detailsBudget && (
+          <BudgetDetails budget={detailsBudget} transactions={transactions} />
+        )}
+      </FullScreenSheet>
     </section>
+  )
+}
+
+/**
+ * Read-only details for a single budget shown inside the centered modal: the
+ * overall spent-vs-cap headline plus a per-category breakdown (spend and, where
+ * set, the category limit and how much is left / over).
+ */
+function BudgetDetails({
+  budget,
+  transactions,
+}: {
+  budget: Budget
+  transactions: import('../types').Transaction[]
+}) {
+  const p = useMemo(
+    () => computeBudgetProgress(transactions, budget),
+    [transactions, budget],
+  )
+  const label = `${formatDate(budget.startDate)} – ${formatDate(budget.endDate)}`
+  const pct = p.limit > 0 ? Math.min(100, (p.spent / p.limit) * 100) : 0
+
+  return (
+    <div className="space-y-4">
+      {/* Overall headline */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+        <p className="text-xs text-slate-400">{label}</p>
+        <p className="mt-1 text-lg font-semibold text-slate-900">
+          {formatMoney(p.spent)}{' '}
+          <span className="text-sm font-normal text-slate-400">
+            / {formatMoney(p.limit)}
+          </span>
+        </p>
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`h-full rounded-full ${p.over ? 'bg-money-out' : 'bg-money-in'}`}
+            style={{ width: `${p.over ? 100 : pct}%` }}
+          />
+        </div>
+        <p
+          className={`mt-2 text-xs font-semibold ${p.over ? 'text-money-out' : 'text-money-in'}`}
+        >
+          {p.over
+            ? `${formatMoney(Math.abs(p.remaining))} over`
+            : `${formatMoney(p.remaining)} ${p.completed ? 'saved' : 'left'}`}
+        </p>
+      </div>
+
+      {/* Per-category breakdown */}
+      <div>
+        <span className="mb-2 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          By category
+        </span>
+        {p.categories.length === 0 ? (
+          <p className="rounded-2xl bg-white p-4 text-center text-xs text-slate-400 shadow-sm ring-1 ring-slate-100">
+            No spending recorded in this budget's range yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {p.categories.map((c) => {
+              const cpct =
+                c.limit && c.limit > 0
+                  ? Math.min(100, (c.spent / c.limit) * 100)
+                  : null
+              return (
+                <div
+                  key={c.category}
+                  className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium text-slate-900">
+                      {c.category}
+                    </span>
+                    <span className="shrink-0 text-sm text-slate-900">
+                      {formatMoney(c.spent)}
+                      {c.limit !== null && (
+                        <span className="text-xs font-normal text-slate-400">
+                          {' '}
+                          / {formatMoney(c.limit)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {cpct !== null && (
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${c.over ? 'bg-money-out' : 'bg-money-in'}`}
+                        style={{ width: `${c.over ? 100 : cpct}%` }}
+                      />
+                    </div>
+                  )}
+                  {c.remaining !== null && (
+                    <p
+                      className={`mt-1 text-xs font-medium ${c.over ? 'text-money-out' : 'text-slate-400'}`}
+                    >
+                      {c.over
+                        ? `${formatMoney(Math.abs(c.remaining))} over limit`
+                        : `${formatMoney(c.remaining)} left`}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -379,11 +503,13 @@ export function BudgetManager() {
 function BudgetCard({
   budget,
   transactions,
+  onOpen,
   onEdit,
   onDelete,
 }: {
   budget: Budget
   transactions: import('../types').Transaction[]
+  onOpen: () => void
   onEdit: () => void
   onDelete: (id: string, label: string) => void
 }) {
@@ -395,7 +521,19 @@ function BudgetCard({
   const pct = p.limit > 0 ? Math.min(100, (p.spent / p.limit) * 100) : 0
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      className="rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-slate-100 transition-colors hover:bg-slate-50"
+      aria-label={`View budget details for ${label}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-900">
@@ -409,7 +547,10 @@ function BudgetCard({
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            onClick={onEdit}
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit()
+            }}
             className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
             aria-label="Edit budget"
           >
@@ -417,7 +558,10 @@ function BudgetCard({
           </button>
           <button
             type="button"
-            onClick={() => onDelete(budget.id, label)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(budget.id, label)
+            }}
             className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-money-out"
             aria-label="Delete budget"
           >

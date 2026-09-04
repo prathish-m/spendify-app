@@ -46,6 +46,7 @@ export function DatePicker({
   placeholder = 'Pick a date',
   ariaLabel,
   fullWidth = false,
+  align = 'left',
 }: {
   value: string
   onChange: (iso: string) => void
@@ -54,6 +55,12 @@ export function DatePicker({
   placeholder?: string
   ariaLabel?: string
   fullWidth?: boolean
+  /**
+   * Which edge the calendar popover anchors to. Use `right` for controls near
+   * the right side of the screen (e.g. a range's end date) so the popover
+   * opens leftwards and never pushes the page wider than the viewport.
+   */
+  align?: 'left' | 'right'
 }) {
   const [open, setOpen] = useState(false)
   // Which sub-view the popover shows: the day grid or a year picker.
@@ -147,7 +154,9 @@ export function DatePicker({
       {open && (
         <div
           role="dialog"
-          className="absolute left-0 top-full z-30 mt-2 w-64 rounded-xl bg-white p-3 shadow-lg ring-1 ring-slate-200"
+          className={`absolute top-full z-30 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl bg-white p-3 shadow-lg ring-1 ring-slate-200 ${
+            align === 'right' ? 'right-0' : 'left-0'
+          }`}
         >
           {/* Month navigation */}
           <div className="mb-2 flex items-center justify-between">

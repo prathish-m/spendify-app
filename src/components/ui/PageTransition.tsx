@@ -21,6 +21,10 @@ export function PageTransition({
 }) {
   const distance = 24 * (direction >= 0 ? 1 : -1)
   return (
+    // A stable min-height keeps the content area from collapsing to zero during
+    // the exit→enter gap (mode="wait"), which would otherwise toggle the page's
+    // vertical scrollbar and make the fixed bottom nav visibly jump.
+    <div className="min-h-[70vh]">
     <AnimatePresence mode="wait" initial={false}>
       <motion.div
         key={pageKey}
@@ -32,5 +36,6 @@ export function PageTransition({
         {children}
       </motion.div>
     </AnimatePresence>
+    </div>
   )
 }
