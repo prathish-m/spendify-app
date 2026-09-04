@@ -191,6 +191,8 @@ export function toImportable(tx: Transaction): ImportableTx {
     isAdjustment: tx.isAdjustment ?? false,
     attachment: tx.attachment ?? null,
     attachmentName: tx.attachmentName ?? null,
+    // Budget opt-out flag round-trips; absent (older backups) → included.
+    includeInBudget: tx.includeInBudget ?? true,
   }
 }
 

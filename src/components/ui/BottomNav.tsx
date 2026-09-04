@@ -1,4 +1,5 @@
 import { LayoutDashboard, Home, Wallet } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 type Page = 'dashboard' | 'home' | 'budgets'
 
@@ -30,10 +31,12 @@ export function BottomNav({ page, onChange }: BottomNavProps) {
         {tabs.map(({ key, label, icon: Icon }) => {
           const active = page === key
           return (
-            <button
+            <motion.button
               key={key}
               onClick={() => onChange(key)}
               aria-current={active ? 'page' : undefined}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-colors ${
                 active
                   ? 'bg-slate-900 text-white shadow-sm'
@@ -46,7 +49,7 @@ export function BottomNav({ page, onChange }: BottomNavProps) {
               <span className={active ? '' : 'hidden sm:inline'}>
                 {label}
               </span>
-            </button>
+            </motion.button>
           )
         })}
       </div>

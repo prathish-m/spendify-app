@@ -100,6 +100,8 @@ interface StoreState {
    * connection-error banner.
    */
   addBudget: (budget: NewBudget) => Promise<void>
+  /** Edit a budget. Rejects (throws) on overlap so the caller can surface it. */
+  updateBudget: (id: string, budget: NewBudget) => Promise<void>
   removeBudget: (id: string) => Promise<void>
 }
 
@@ -328,6 +330,21 @@ export const useStore = create<StoreState>()((set, get) => {
       beginBusy()
       try {
         const { state } = await api.addBudget(budget)
+        set({
+          people: state.people,
+          transactions: state.transactions,
+          budgets: state.budgets ?? [],
+          error: null,
+        })
+      } finally {
+        endBusy()
+      }
+    },
+
+    updateBudget: async (id, budget) => {
+      beginBusy()
+      try {
+        const { state } = await api.updateBudget(id, budget)
         set({
           people: state.people,
           transactions: state.transactions,

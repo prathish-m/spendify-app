@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Wallet, X, PlusCircle } from 'lucide-react'
+import { Plus, Trash2, Wallet, X, PlusCircle, Pencil } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { ApiError } from '../lib/api'
-import { CATEGORIES } from '../types'
+import { ApiError, type NewBudget } from '../lib/api'
+import { CATEGORIES, type Budget } from '../types'
 import { formatMoney, formatDate } from '../lib/format'
-import { currentMonthRange } from '../lib/analytics'
+import { currentMonthRange, computeBudgetProgress } from '../lib/analytics'
 import { DatePicker } from './ui/DatePicker'
 import { useConfirm } from './ui/ConfirmDialog'
+import { FullScreenSheet } from './ui/FullScreenSheet'
 
-/** A single editable per-category limit row in the create form. */
+/** A single editable per-category limit row in the create/edit form. */
 interface DraftLimit {
   key: number
   category: string
@@ -16,14 +17,18 @@ interface DraftLimit {
 }
 
 /**
- * Budgets screen (Android-only): create a spending budget over a date range
- * (defaulting to the current month) with an overall cap and optional
- * per-category limits, list existing budgets, and delete them. Overlapping
- * ranges are rejected by the server and surfaced inline.
+ * Budgets screen (Android-only): create/EDIT a spending budget over a date
+ * range (defaulting to the current month) with an overall cap and optional
+ * per-category limits; list existing budgets with live progress or, once the
+ * range has elapsed, a completed summary (saved / overspent). Overlapping
+ * ranges are rejected by the server and surfaced inline. Past budgets are
+ * capped to the latest few with a full-screen "See more" view.
  */
 export function BudgetManager() {
   const budgets = useStore((s) => s.budgets)
+  const transactions = useStore((s) => s.transactions)
   const addBudget = useStore((s) => s.addBudget)
+  const updateBudget = useStore((s) => s.updateBudget)
   const removeBudget = useStore((s) => s.removeBudget)
   const confirm = useConfirm()
 
@@ -34,6 +39,10 @@ export function BudgetManager() {
   const [limits, setLimits] = useState<DraftLimit[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // When set, the form is editing this existing budget instead of creating.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  // Full-screen "see all past budgets" sheet.
+  const [showAllPast, setShowAllPast] = useState(false)
 
   const nextKey = useMemo(() => {
     let k = 1
@@ -46,7 +55,7 @@ export function BudgetManager() {
       { key: nextKey(), category: CATEGORIES[0], amount: '' },
     ])
 
-  const updateLimit = (key: number, patch: Partial<DraftLimit>) =>
+  const updateLimitRow = (key: number, patch: Partial<DraftLimit>) =>
     setLimits((prev) =>
       prev.map((l) => (l.key === key ? { ...l, ...patch } : l)),
     )
@@ -61,9 +70,28 @@ export function BudgetManager() {
     setAmount('')
     setLimits([])
     setError(null)
+    setEditingId(null)
   }
 
-  const handleCreate = async () => {
+  // Load an existing budget into the form for editing.
+  const startEdit = (b: Budget) => {
+    setEditingId(b.id)
+    setFrom(b.startDate)
+    setTo(b.endDate)
+    setAmount(String(b.amount))
+    setLimits(
+      b.categoryLimits.map((l) => ({
+        key: nextKey(),
+        category: l.category,
+        amount: String(l.amount),
+      })),
+    )
+    setError(null)
+    // Scroll to top so the form is visible.
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleSave = async () => {
     setError(null)
     const amt = Number(amount)
     if (!from || !to) {
@@ -87,14 +115,20 @@ export function BudgetManager() {
       if (!cat || !Number.isFinite(n) || n <= 0) continue
       merged.set(cat, (merged.get(cat) ?? 0) + n)
     }
-    const categoryLimits = [...merged.entries()].map(([category, a]) => ({
-      category,
-      amount: a,
-    }))
+    const payload: NewBudget = {
+      startDate: from,
+      endDate: to,
+      amount: amt,
+      categoryLimits: [...merged.entries()].map(([category, a]) => ({
+        category,
+        amount: a,
+      })),
+    }
 
     setSaving(true)
     try {
-      await addBudget({ startDate: from, endDate: to, amount: amt, categoryLimits })
+      if (editingId) await updateBudget(editingId, payload)
+      else await addBudget(payload)
       reset()
     } catch (err) {
       // Overlap (409) or validation error → show inline, don't nuke the form.
@@ -112,14 +146,21 @@ export function BudgetManager() {
       confirmLabel: 'Delete',
       destructive: true,
     })
-    if (ok) await removeBudget(id)
+    if (ok) {
+      if (editingId === id) reset()
+      await removeBudget(id)
+    }
   }
 
-  // Sorted newest range first (server already orders, but be defensive).
+  // Split into current/upcoming vs. completed (elapsed) budgets, newest first.
+  const today = new Date().toISOString().slice(0, 10)
   const sorted = useMemo(
     () => [...budgets].sort((a, b) => b.startDate.localeCompare(a.startDate)),
     [budgets],
   )
+  const activeOrUpcoming = sorted.filter((b) => b.endDate >= today)
+  const past = sorted.filter((b) => b.endDate < today)
+  const pastPreview = past.slice(0, 5)
 
   return (
     <section className="space-y-4">
@@ -130,11 +171,22 @@ export function BudgetManager() {
         </h2>
       </div>
 
-      {/* Create form */}
+      {/* Create / edit form */}
       <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-        <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
-          New budget
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            {editingId ? 'Edit budget' : 'New budget'}
+          </span>
+          {editingId && (
+            <button
+              type="button"
+              onClick={reset}
+              className="rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            >
+              Cancel edit
+            </button>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span className="font-medium uppercase tracking-wider text-slate-400">
@@ -192,7 +244,7 @@ export function BudgetManager() {
             <div key={l.key} className="flex items-center gap-2">
               <select
                 value={l.category}
-                onChange={(e) => updateLimit(l.key, { category: e.target.value })}
+                onChange={(e) => updateLimitRow(l.key, { category: e.target.value })}
                 className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
               >
                 {CATEGORIES.map((c) => (
@@ -207,7 +259,7 @@ export function BudgetManager() {
                 min="0"
                 step="0.01"
                 value={l.amount}
-                onChange={(e) => updateLimit(l.key, { amount: e.target.value })}
+                onChange={(e) => updateLimitRow(l.key, { amount: e.target.value })}
                 placeholder="Limit"
                 className="w-24 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
               />
@@ -231,53 +283,190 @@ export function BudgetManager() {
 
         <button
           type="button"
-          onClick={handleCreate}
+          onClick={handleSave}
           disabled={saving}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
         >
-          <Plus size={15} /> {saving ? 'Saving…' : 'Create budget'}
+          <Plus size={15} />{' '}
+          {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create budget'}
         </button>
       </div>
 
-      {/* Existing budgets */}
+      {/* Current & upcoming budgets */}
       {sorted.length === 0 ? (
         <div className="rounded-2xl bg-white p-6 text-center text-xs text-slate-400 shadow-sm ring-1 ring-slate-100">
           No budgets yet. Create one above to track your spending.
         </div>
       ) : (
-        <div className="space-y-2">
-          {sorted.map((b) => {
-            const label = `${formatDate(b.startDate)} – ${formatDate(b.endDate)}`
-            return (
-              <div
-                key={b.id}
-                className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {formatMoney(b.amount)}
-                  </p>
-                  <p className="truncate text-xs text-slate-400">{label}</p>
-                  {b.categoryLimits.length > 0 && (
-                    <p className="mt-0.5 truncate text-[11px] text-slate-400">
-                      {b.categoryLimits.length} category limit
-                      {b.categoryLimits.length === 1 ? '' : 's'}
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(b.id, label)}
-                  className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-money-out"
-                  aria-label="Delete budget"
-                >
-                  <Trash2 size={16} />
-                </button>
+        <>
+          {activeOrUpcoming.length > 0 && (
+            <div className="space-y-2">
+              <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                Current & upcoming
+              </span>
+              {activeOrUpcoming.map((b) => (
+                <BudgetCard
+                  key={b.id}
+                  budget={b}
+                  transactions={transactions}
+                  onEdit={() => startEdit(b)}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+
+          {past.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                  Completed
+                </span>
+                {past.length > pastPreview.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllPast(true)}
+                    className="rounded-full px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    See more ({past.length})
+                  </button>
+                )}
               </div>
-            )
-          })}
-        </div>
+              {pastPreview.map((b) => (
+                <BudgetCard
+                  key={b.id}
+                  budget={b}
+                  transactions={transactions}
+                  onEdit={() => startEdit(b)}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
+
+      {/* Full-screen: all past budgets */}
+      <FullScreenSheet
+        open={showAllPast}
+        onClose={() => setShowAllPast(false)}
+        title="Completed budgets"
+      >
+        <div className="space-y-2">
+          {past.map((b) => (
+            <BudgetCard
+              key={b.id}
+              budget={b}
+              transactions={transactions}
+              onEdit={() => {
+                setShowAllPast(false)
+                startEdit(b)
+              }}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      </FullScreenSheet>
     </section>
   )
 }
+
+/**
+ * A single budget card. Live budgets show a spent-vs-cap progress bar; once the
+ * range has elapsed it shows a completed summary — how much was saved or
+ * overspent overall, and how many category limits were kept vs exceeded.
+ */
+function BudgetCard({
+  budget,
+  transactions,
+  onEdit,
+  onDelete,
+}: {
+  budget: Budget
+  transactions: import('../types').Transaction[]
+  onEdit: () => void
+  onDelete: (id: string, label: string) => void
+}) {
+  const p = useMemo(
+    () => computeBudgetProgress(transactions, budget),
+    [transactions, budget],
+  )
+  const label = `${formatDate(budget.startDate)} – ${formatDate(budget.endDate)}`
+  const pct = p.limit > 0 ? Math.min(100, (p.spent / p.limit) * 100) : 0
+
+  return (
+    <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900">
+            {formatMoney(p.spent)}{' '}
+            <span className="text-xs font-normal text-slate-400">
+              / {formatMoney(p.limit)}
+            </span>
+          </p>
+          <p className="truncate text-xs text-slate-400">{label}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Edit budget"
+          >
+            <Pencil size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(budget.id, label)}
+            className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-money-out"
+            aria-label="Delete budget"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full ${p.over ? 'bg-money-out' : 'bg-money-in'}`}
+          style={{ width: `${p.over ? 100 : pct}%` }}
+        />
+      </div>
+
+      {p.completed ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span
+            className={`font-semibold ${p.over ? 'text-money-out' : 'text-money-in'}`}
+          >
+            {p.over
+              ? `Overspent ${formatMoney(Math.abs(p.remaining))}`
+              : `Saved ${formatMoney(p.remaining)}`}
+          </span>
+          {p.categoryLimitsTotal > 0 && (
+            <span className="text-slate-400">
+              {p.categoryLimitsWithin} of {p.categoryLimitsTotal} within limit
+              {p.categoryLimitsOver > 0 ? ` · ${p.categoryLimitsOver} over` : ''}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 text-xs">
+          <span
+            className={`font-semibold ${p.over ? 'text-money-out' : 'text-money-in'}`}
+          >
+            {p.over
+              ? `${formatMoney(Math.abs(p.remaining))} over`
+              : `${formatMoney(p.remaining)} left`}
+          </span>
+          {budget.categoryLimits.length > 0 && (
+            <span className="text-slate-400">
+              {budget.categoryLimits.length} category limit
+              {budget.categoryLimits.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+

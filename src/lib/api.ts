@@ -146,6 +146,13 @@ export const api = {
       body: JSON.stringify(budget),
     }),
 
+  /** Edit a budget. Server rejects overlapping ranges (excluding itself) 409. */
+  updateBudget: (id: string, budget: NewBudget) =>
+    request<{ state: AppState }>(`/budgets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(budget),
+    }),
+
   removeBudget: (id: string) =>
     request<{ state: AppState }>(`/budgets/${id}`, { method: 'DELETE' }),
 

@@ -12,6 +12,7 @@ import { useStore, personName } from '../store/useStore'
 import { attachmentUrl } from '../lib/api'
 import { useConfirm } from './ui/ConfirmDialog'
 import { TransactionDetail } from './ui/TransactionDetail'
+import { FullScreenSheet } from './ui/FullScreenSheet'
 import { ME_ID, type Transaction } from '../types'
 import { formatDate, formatMoney } from '../lib/format'
 
@@ -46,6 +47,11 @@ export function TransactionHistory() {
 
   // Detailed-view state: the transaction currently expanded in a modal.
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
+
+  // Full-screen "see all" view: the compact card shows only the latest few;
+  // this opens the complete, searchable/selectable list.
+  const [showAll, setShowAll] = useState(false)
+  const PREVIEW_COUNT = 5
 
   // Filtered + sorted view driven by the search box. We match against the
   // description, category, and the names of everyone involved (payer +
@@ -133,6 +139,37 @@ export function TransactionHistory() {
     if (ok) await respondToTransaction(tx.id, 'rejected')
   }
 
+  // Renders a transaction list; `selectable` enables the multi-select controls
+  // (used inside the full-screen view only). `rows` is the slice to display.
+  const renderList = (rows: Transaction[], selectable: boolean) => (
+    <ul className="divide-y divide-slate-50">
+      {rows.map((t) => (
+        <Row
+          key={t.id}
+          tx={t}
+          people={people}
+          selectMode={selectable && selectMode}
+          selected={selected.has(t.id)}
+          onToggleSelect={() => toggleSelect(t.id)}
+          onOpen={() => setDetailTx(t)}
+          onDelete={() => confirmDelete(t)}
+          onAccept={() => respondToTransaction(t.id, 'accepted')}
+          onReject={() => confirmReject(t)}
+        />
+      ))}
+    </ul>
+  )
+
+  const preview = filtered.slice(0, PREVIEW_COUNT)
+  const hasMore = transactions.length > PREVIEW_COUNT
+
+  const openAll = () => setShowAll(true)
+  const closeAll = () => {
+    setShowAll(false)
+    exitSelectMode()
+    setSearch('')
+  }
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
       <div className="mb-4 flex items-center gap-2">
@@ -144,10 +181,43 @@ export function TransactionHistory() {
           {transactions.length === 1 ? 'entry' : 'entries'}
         </span>
 
-        {/* Header actions */}
-        {transactions.length > 0 &&
-          (selectMode ? (
-            <div className="ml-auto flex items-center gap-2">
+        {hasMore && (
+          <button
+            type="button"
+            onClick={openAll}
+            className="ml-auto rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          >
+            See more
+          </button>
+        )}
+      </div>
+
+      {/* Compact preview: the latest few, tap to open details. */}
+      {transactions.length === 0 ? (
+        <p className="py-8 text-center text-xs text-slate-400">
+          No transactions yet. Add your first expense to get started.
+        </p>
+      ) : (
+        <>
+          {renderList(preview, false)}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={openAll}
+              className="mt-3 w-full rounded-xl bg-slate-50 py-2.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            >
+              See all {transactions.length} transactions
+            </button>
+          )}
+        </>
+      )}
+
+      {/* Full-screen: complete searchable, selectable history. */}
+      <FullScreenSheet open={showAll} onClose={closeAll} title="All transactions">
+        {/* Select-mode controls */}
+        <div className="mb-3 flex items-center justify-end gap-2">
+          {selectMode ? (
+            <>
               <button
                 type="button"
                 onClick={toggleSelectAll}
@@ -172,21 +242,20 @@ export function TransactionHistory() {
               >
                 <X size={15} />
               </button>
-            </div>
+            </>
           ) : (
             <button
               type="button"
               onClick={() => setSelectMode(true)}
-              className="ml-auto rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
             >
               Select
             </button>
-          ))}
-      </div>
+          )}
+        </div>
 
-      {/* Search */}
-      {transactions.length > 0 && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+        {/* Search */}
+        <div className="mb-3 flex items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-100">
           <Search size={15} className="shrink-0 text-slate-400" />
           <input
             value={search}
@@ -204,34 +273,17 @@ export function TransactionHistory() {
             </button>
           )}
         </div>
-      )}
 
-      {transactions.length === 0 ? (
-        <p className="py-8 text-center text-xs text-slate-400">
-          No transactions yet. Add your first expense to get started.
-        </p>
-      ) : filtered.length === 0 ? (
-        <p className="py-8 text-center text-xs text-slate-400">
-          No transactions match “{search}”.
-        </p>
-      ) : (
-        <ul className="max-h-[28rem] divide-y divide-slate-50 overflow-y-auto">
-          {filtered.map((t) => (
-            <Row
-              key={t.id}
-              tx={t}
-              people={people}
-              selectMode={selectMode}
-              selected={selected.has(t.id)}
-              onToggleSelect={() => toggleSelect(t.id)}
-              onOpen={() => setDetailTx(t)}
-              onDelete={() => confirmDelete(t)}
-              onAccept={() => respondToTransaction(t.id, 'accepted')}
-              onReject={() => confirmReject(t)}
-            />
-          ))}
-        </ul>
-      )}
+        {filtered.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">
+            No transactions match “{search}”.
+          </p>
+        ) : (
+          <div className="rounded-2xl bg-white p-2 ring-1 ring-slate-100">
+            {renderList(filtered, true)}
+          </div>
+        )}
+      </FullScreenSheet>
 
       {/* Detailed read-only view of a single transaction. */}
       <TransactionDetail

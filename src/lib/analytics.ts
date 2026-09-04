@@ -224,6 +224,14 @@ export interface BudgetProgress {
   over: boolean
   /** Per-category breakdown, largest spend first. */
   categories: CategoryBudgetProgress[]
+  /** True once the budget's range has fully elapsed (endDate < today). */
+  completed: boolean
+  /** How many category limits stayed within their cap. */
+  categoryLimitsWithin: number
+  /** How many category limits were exceeded. */
+  categoryLimitsOver: number
+  /** Total number of defined category limits. */
+  categoryLimitsTotal: number
 }
 
 /**
@@ -242,6 +250,8 @@ export function computeBudgetProgress(
 
   for (const t of transactions) {
     if (t.type === 'income' || t.isAdjustment) continue
+    // Respect the per-transaction opt-out (default is included).
+    if (t.includeInBudget === false) continue
     if (!inBudgetRange(t.date, budget)) continue
     const amt = yourSpend(t)
     if (amt <= 0) continue
@@ -272,8 +282,12 @@ export function computeBudgetProgress(
     })
     .sort((a, b) => b.spent - a.spent)
 
+  const withDefinedLimit = categories.filter((c) => c.limit !== null)
+  const categoryLimitsOver = withDefinedLimit.filter((c) => c.over).length
+
   const limit = budget.amount
   const remaining = round2(limit - spent)
+  const today = new Date().toISOString().slice(0, 10)
   return {
     budget,
     spent,
@@ -282,6 +296,10 @@ export function computeBudgetProgress(
     ratio: limit > 0 ? spent / limit : 0,
     over: spent > limit,
     categories,
+    completed: budget.endDate < today,
+    categoryLimitsWithin: withDefinedLimit.length - categoryLimitsOver,
+    categoryLimitsOver,
+    categoryLimitsTotal: withDefinedLimit.length,
   }
 }
 

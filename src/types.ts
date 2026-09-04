@@ -117,6 +117,11 @@ export interface Transaction {
   /** Original filename of the attachment, for display/download. */
   attachmentName?: string | null
   /**
+   * Whether this transaction counts toward spending budgets (Android feature).
+   * Defaults true when absent; income is never counted regardless.
+   */
+  includeInBudget?: boolean
+  /**
    * Marks entries auto-created by editing a balance (a manual correction),
    * so the UI can label them distinctly. Optional for backward-compatibility.
    */

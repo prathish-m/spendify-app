@@ -55,6 +55,9 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState<string>('General')
   const [date, setDate] = useState(todayISO())
+  // Whether this expense counts toward spending budgets (default: included).
+  // Income never counts, so this toggle only shows for expenses.
+  const [includeInBudget, setIncludeInBudget] = useState(true)
 
   // User-defined categories (persisted in localStorage). `addingCategory`
   // reveals an inline text input; `newCategory` holds its value.
@@ -183,6 +186,7 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
     setAmount('')
     setDescription('')
     setCategory('General')
+    setIncludeInBudget(true)
     setAddingCategory(false)
     setNewCategory('')
     clearAttachment()
@@ -243,6 +247,8 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
         shares: splitActive ? shares : [],
         attachment,
         attachmentName,
+        // Income never counts toward budgets; for expenses, honor the toggle.
+        includeInBudget: isIncome ? false : includeInBudget,
       })
       resetAndClose()
     } finally {
@@ -404,6 +410,28 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
             fullWidth
           />
         </div>
+
+        {/* Count toward budget — expenses only (income never counts). */}
+        {!isIncome && (
+          <div className="border-b border-slate-100 py-3">
+            <label className="flex cursor-pointer items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-slate-700">
+                  Count toward budget
+                </span>
+                <span className="block text-[11px] text-slate-400">
+                  Turn off to exclude this expense from budgets
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={includeInBudget}
+                onChange={(e) => setIncludeInBudget(e.target.checked)}
+                className="h-5 w-5 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-300"
+              />
+            </label>
+          </div>
+        )}
 
         {/* Attachment — optional proof (receipt photo / PDF). */}
         <div className="border-b border-slate-100 py-3">

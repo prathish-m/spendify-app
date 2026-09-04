@@ -23,6 +23,7 @@ import { ConfirmDialog, useConfirm } from './components/ui/ConfirmDialog'
 import { GlobalBusy } from './components/ui/GlobalBusy'
 import { SideDrawer, DrawerItem } from './components/ui/SideDrawer'
 import { BottomNav } from './components/ui/BottomNav'
+import { PageTransition } from './components/ui/PageTransition'
 import { useStore } from './store/useStore'
 import { useTheme } from './lib/theme'
 import {
@@ -41,6 +42,9 @@ import {
  */
 type Page = 'dashboard' | 'home' | 'budgets'
 
+// Fixed tab order, used to pick the slide direction when switching pages.
+const PAGE_ORDER: Page[] = ['dashboard', 'budgets', 'home']
+
 export default function App() {
   const [formOpen, setFormOpen] = useState(false)
   // Left slide-out menu holding export/import/theme/delete/logout actions.
@@ -48,6 +52,13 @@ export default function App() {
   // Which page is showing. Dashboard = balance cards + analytics charts.
   // Home = settlements, transaction history and people.
   const [page, setPage] = useState<Page>('dashboard')
+  // Slide direction for the page transition: +1 when moving to a later tab,
+  // -1 when moving back. Updated on every navigation.
+  const [navDirection, setNavDirection] = useState(1)
+  const goToPage = (next: Page) => {
+    setNavDirection(PAGE_ORDER.indexOf(next) >= PAGE_ORDER.indexOf(page) ? 1 : -1)
+    setPage(next)
+  }
   const bootstrap = useStore((s) => s.bootstrap)
   const authReady = useStore((s) => s.authReady)
   const user = useStore((s) => s.user)
@@ -318,29 +329,33 @@ export default function App() {
             <Loader2 size={22} className="animate-spin" />
             <span className="text-xs">Loading your data…</span>
           </div>
-        ) : page === 'dashboard' ? (
-          /* Dashboard page: balance cards + analytics charts. */
-          <div className="space-y-6">
-            <Dashboard />
-            <Analytics />
-          </div>
-        ) : page === 'budgets' ? (
-          /* Budgets page: create/manage spending budgets. */
-          <BudgetManager />
         ) : (
-          /* Home page: settlements, transaction history and people. */
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
-            {/* Primary column */}
-            <div className="space-y-6">
-              <Settlements />
-              <TransactionHistory />
-            </div>
+          <PageTransition pageKey={page} direction={navDirection}>
+            {page === 'dashboard' ? (
+              /* Dashboard page: balance cards + analytics charts. */
+              <div className="space-y-6">
+                <Dashboard />
+                <Analytics />
+              </div>
+            ) : page === 'budgets' ? (
+              /* Budgets page: create/manage spending budgets. */
+              <BudgetManager />
+            ) : (
+              /* Home page: settlements, transaction history and people. */
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
+                {/* Primary column */}
+                <div className="space-y-6">
+                  <Settlements />
+                  <TransactionHistory />
+                </div>
 
-            {/* Secondary column */}
-            <aside className="space-y-6">
-              <PeopleManager />
-            </aside>
-          </div>
+                {/* Secondary column */}
+                <aside className="space-y-6">
+                  <PeopleManager />
+                </aside>
+              </div>
+            )}
+          </PageTransition>
         )}
       </main>
 
@@ -357,7 +372,7 @@ export default function App() {
       </button>
 
       {/* Floating bottom navigation (Dashboard / Home) */}
-      <BottomNav page={page} onChange={setPage} />
+      <BottomNav page={page} onChange={goToPage} />
 
       <TransactionForm open={formOpen} onClose={() => setFormOpen(false)} />
 
