@@ -5,6 +5,7 @@ import { ApiError, type NewBudget } from '../lib/api'
 import { CATEGORIES, type Budget } from '../types'
 import { formatMoney, formatDate } from '../lib/format'
 import { currentMonthRange, computeBudgetProgress } from '../lib/analytics'
+import { CHART_COLORS as COLORS } from '../lib/colors'
 import { DatePicker } from './ui/DatePicker'
 import { useConfirm } from './ui/ConfirmDialog'
 import { FullScreenSheet } from './ui/FullScreenSheet'
@@ -133,7 +134,7 @@ export function BudgetManager() {
       else await addBudget(payload)
       reset()
     } catch (err) {
-      // Overlap (409) or validation error → show inline, don't nuke the form.
+      // Overlap (409) or validation error â†’ show inline, don't nuke the form.
       if (err instanceof ApiError) setError(err.message)
       else setError(err instanceof Error ? err.message : 'Could not save budget.')
     } finally {
@@ -201,7 +202,7 @@ export function BudgetManager() {
             placeholder="From"
             ariaLabel="Budget start date"
           />
-          <span className="text-slate-300">→</span>
+          <span className="text-slate-300">â†’</span>
           <DatePicker
             value={to}
             min={from || undefined}
@@ -291,7 +292,7 @@ export function BudgetManager() {
           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
         >
           <Plus size={15} />{' '}
-          {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create budget'}
+          {saving ? 'Savingâ€¦' : editingId ? 'Save changes' : 'Create budget'}
         </button>
       </div>
 
@@ -404,8 +405,38 @@ function BudgetDetails({
     () => computeBudgetProgress(transactions, budget),
     [transactions, budget],
   )
-  const label = `${formatDate(budget.startDate)} – ${formatDate(budget.endDate)}`
-  const pct = p.limit > 0 ? Math.min(100, (p.spent / p.limit) * 100) : 0
+  const label = `${formatDate(budget.startDate)} â€“ ${formatDate(budget.endDate)}`
+  // Assign a stable palette color to each spent category (spend-sorted order),
+  // so the segmented overall bar and the per-category rows below share colors.
+  const colorByCat = useMemo(() => {
+    const m = new Map<string, string>()
+    p.categories
+      .filter((c) => c.spent > 0)
+      .forEach((c, i) => m.set(c.category, COLORS[i % COLORS.length]))
+    return m
+  }, [p.categories])
+
+  // Overall bar segments: width = category spend as a fraction of the cap,
+  // clamped so the running total never exceeds the track.
+  const segments = useMemo(() => {
+    if (p.limit <= 0)
+      return [] as { category: string; width: number; color: string }[]
+    let used = 0
+    return p.categories
+      .filter((c) => c.spent > 0)
+      .map((c) => {
+        const raw = (c.spent / p.limit) * 100
+        const room = Math.max(0, 100 - used)
+        const width = Math.min(raw, room)
+        used += width
+        return {
+          category: c.category,
+          width,
+          color: colorByCat.get(c.category) ?? COLORS[0],
+        }
+      })
+      .filter((s) => s.width > 0)
+  }, [p.categories, p.limit, colorByCat])
 
   return (
     <div className="space-y-4">
@@ -418,11 +449,22 @@ function BudgetDetails({
             / {formatMoney(p.limit)}
           </span>
         </p>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-          <div
-            className={`h-full rounded-full ${p.over ? 'bg-money-out' : 'bg-money-in'}`}
-            style={{ width: `${p.over ? 100 : pct}%` }}
-          />
+        <div className="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+          {segments.map((s) => (
+            <div
+              key={s.category}
+              className="h-full transition-all"
+              style={{ width: `${s.width}%`, backgroundColor: s.color }}
+              title={s.category}
+            />
+          ))}
+          {p.over && (
+            <div
+              className="h-full bg-money-out"
+              style={{ width: '6%' }}
+              title="Over budget"
+            />
+          )}
         </div>
         <p
           className={`mt-2 text-xs font-semibold ${p.over ? 'text-money-out' : 'text-money-in'}`}
@@ -455,8 +497,14 @@ function BudgetDetails({
                   className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-100"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium text-slate-900">
-                      {c.category}
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-slate-900">
+                      {colorByCat.has(c.category) && (
+                        <span
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: colorByCat.get(c.category) }}
+                        />
+                      )}
+                      <span className="truncate">{c.category}</span>
                     </span>
                     <span className="shrink-0 text-sm text-slate-900">
                       {formatMoney(c.spent)}
@@ -497,7 +545,7 @@ function BudgetDetails({
 
 /**
  * A single budget card. Live budgets show a spent-vs-cap progress bar; once the
- * range has elapsed it shows a completed summary — how much was saved or
+ * range has elapsed it shows a completed summary â€” how much was saved or
  * overspent overall, and how many category limits were kept vs exceeded.
  */
 function BudgetCard({
@@ -517,7 +565,7 @@ function BudgetCard({
     () => computeBudgetProgress(transactions, budget),
     [transactions, budget],
   )
-  const label = `${formatDate(budget.startDate)} – ${formatDate(budget.endDate)}`
+  const label = `${formatDate(budget.startDate)} â€“ ${formatDate(budget.endDate)}`
   const pct = p.limit > 0 ? Math.min(100, (p.spent / p.limit) * 100) : 0
 
   return (
@@ -589,7 +637,7 @@ function BudgetCard({
           {p.categoryLimitsTotal > 0 && (
             <span className="text-slate-400">
               {p.categoryLimitsWithin} of {p.categoryLimitsTotal} within limit
-              {p.categoryLimitsOver > 0 ? ` · ${p.categoryLimitsOver} over` : ''}
+              {p.categoryLimitsOver > 0 ? ` Â· ${p.categoryLimitsOver} over` : ''}
             </span>
           )}
         </div>

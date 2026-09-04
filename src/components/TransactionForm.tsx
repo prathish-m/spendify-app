@@ -540,6 +540,7 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
             type="button"
             role="switch"
             aria-checked={isSplit}
+            aria-label="Split this expense"
             onClick={() => {
               setIsSplit((v) => !v)
               // Ensure "You" are included when enabling split.
@@ -547,13 +548,13 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
                 prev.includes(ME_ID) ? prev : [ME_ID, ...prev],
               )
             }}
-            className={`relative h-6 w-11 rounded-full transition-colors ${
-              isSplit ? 'bg-slate-900' : 'bg-slate-200'
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 ${
+              isSplit ? 'bg-slate-900' : 'bg-slate-100'
             }`}
           >
             <span
-              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                isSplit ? 'translate-x-5' : 'translate-x-0'
+              className={`inline-block h-5 w-5 transform rounded-full bg-neutral-100 shadow-sm transition-transform ${
+                isSplit ? 'translate-x-[22px]' : 'translate-x-0.5'
               }`}
             />
           </button>

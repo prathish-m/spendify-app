@@ -40,6 +40,7 @@ import {
   summarize,
   activeBudget,
   computeBudgetProgress,
+  type CategoryBudgetProgress,
   type CategorySlice,
   type Period,
   type TimePoint,
@@ -268,6 +269,96 @@ function BudgetBar({
 }
 
 /**
+ * Overall budget bar broken into one colored segment per category, so the fill
+ * shows *where* the money went (matching the pie chart palette) rather than a
+ * single monotone color. Segment widths sum to actual spend vs the overall
+ * `limit`; any unspent room shows the grey track. When spend exceeds the cap,
+ * segments are clamped to 100% and a distinct red over-limit cap is appended so
+ * the over-budget state stays legible despite the multi-color fill.
+ *
+ * Colors are keyed by each category's index in the (spend-sorted) list so they
+ * line up with the pie/bar charts elsewhere on the screen.
+ */
+function SegmentedBudgetBar({
+  categories,
+  limit,
+  over,
+}: {
+  categories: CategoryBudgetProgress[]
+  limit: number
+  over: boolean
+}) {
+  // Widths are fractions of the overall cap; clamp the running total so the
+  // colored fill never exceeds the track (the over-cap marker signals excess).
+  let used = 0
+  const segments =
+    limit > 0
+      ? categories
+          .filter((c) => c.spent > 0)
+          .map((c, i) => {
+            const raw = (c.spent / limit) * 100
+            const room = Math.max(0, 100 - used)
+            const width = Math.min(raw, room)
+            used += width
+            return {
+              category: c.category,
+              width,
+              color: COLORS[i % COLORS.length],
+            }
+          })
+          .filter((s) => s.width > 0)
+      : []
+
+  return (
+    <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      {segments.map((s) => (
+        <div
+          key={s.category}
+          className="h-full transition-all"
+          style={{ width: `${s.width}%`, backgroundColor: s.color }}
+          title={s.category}
+        />
+      ))}
+      {over && (
+        // Over-cap cap: a small red sliver pinned to the end signals overspend.
+        <div
+          className="h-full bg-money-out"
+          style={{ width: '6%' }}
+          title="Over budget"
+        />
+      )}
+    </div>
+  )
+}
+
+/** Compact color legend mapping segment colors to categories + spend. */
+function BudgetLegend({
+  categories,
+}: {
+  categories: CategoryBudgetProgress[]
+}) {
+  const shown = categories.filter((c) => c.spent > 0)
+  if (shown.length === 0) return null
+  return (
+    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5">
+      {shown.map((c, i) => (
+        <span
+          key={c.category}
+          className="flex items-center gap-1.5 text-[11px] text-slate-500"
+        >
+          <span
+            className="inline-block h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: COLORS[i % COLORS.length] }}
+          />
+          <span className="truncate">{c.category}</span>
+          <span className="text-slate-400">{formatMoney(c.spent)}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
  * Budget indicator: shows the budget covering the selected "From" date (or
  * today when unset) — overall spent vs cap with over/under status, plus a
  * per-category breakdown. Category rows with an explicit limit show their own
@@ -323,7 +414,8 @@ function BudgetIndicator({ anchorDate }: { anchorDate: string }) {
       <p className="mb-2 text-[11px] text-slate-400">
         {formatDate(budget.startDate)} – {formatDate(budget.endDate)}
       </p>
-      <BudgetBar spent={spent} limit={limit} over={over} />
+      <SegmentedBudgetBar categories={categories} limit={limit} over={over} />
+      <BudgetLegend categories={categories} />
 
       {categories.length > 0 && (
         <div className="mt-4 space-y-3">
