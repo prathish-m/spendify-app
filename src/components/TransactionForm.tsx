@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -19,6 +19,7 @@ import {
   ME_ID,
   type Category,
   type SplitShare,
+  type Transaction,
   type TxType,
 } from '../types'
 import {
@@ -32,6 +33,12 @@ import { formatMoney, round2, todayISO } from '../lib/format'
 interface TransactionFormProps {
   open: boolean
   onClose: () => void
+  /**
+   * When set, the form opens in EDIT mode pre-filled with this transaction and
+   * saving PUTs an update instead of creating a new entry. Only transactions
+   * you own and that aren't adjustments should be passed here.
+   */
+  editing?: Transaction | null
 }
 
 /**
@@ -40,10 +47,18 @@ interface TransactionFormProps {
  * selection and split configuration (equal split by default), keeping the
  * default flow uncluttered.
  */
-export function TransactionForm({ open, onClose }: TransactionFormProps) {
+export function TransactionForm({
+  open,
+  onClose,
+  editing = null,
+}: TransactionFormProps) {
   const people = useStore((s) => s.people)
   const addTransaction = useStore((s) => s.addTransaction)
+  const updateTransaction = useStore((s) => s.updateTransaction)
   const settleUp = useStore((s) => s.settleUp)
+  const isEditing = editing !== null
+  // Surfaces a validation/404 error from an edit save inline in the form.
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // 'expense' = money out (debit), 'income' = money in (credit).
   const [txType, setTxType] = useState<TxType>('expense')
@@ -146,6 +161,47 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
   // Raw per-person input strings for custom mode, keyed by person id.
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({})
 
+  // Prefill every field from the transaction being edited whenever the modal
+  // opens in edit mode (and reset the inline error). Split bills restore their
+  // participants, payer and per-person shares as a "custom" split so the exact
+  // original amounts are preserved even if they weren't an even divide.
+  useEffect(() => {
+    if (!open || !editing) return
+    setSaveError(null)
+    setTxType(editing.type === 'income' ? 'income' : 'expense')
+    setSettleFrom('')
+    setAmount(String(editing.amount))
+    setDescription(editing.description ?? '')
+    setCategory(editing.category || 'General')
+    setDate(editing.date)
+    setIncludeInBudget(editing.includeInBudget !== false)
+    setAttachment(editing.attachment ?? null)
+    setAttachmentName(editing.attachmentName ?? null)
+    setAttachmentPreview(null)
+    setAttachmentIsImage(false)
+    setAttachmentError(null)
+
+    if (editing.isSplit && editing.shares.length > 0) {
+      setIsSplit(true)
+      setPaidBy(editing.paidBy || ME_ID)
+      setParticipants(editing.shares.map((s) => s.personId))
+      setSplitMode('custom')
+      setCustomAmounts(
+        Object.fromEntries(
+          editing.shares.map((s) => [s.personId, String(s.amount)]),
+        ),
+      )
+    } else {
+      setIsSplit(false)
+      setPaidBy(ME_ID)
+      setParticipants([ME_ID])
+      setSplitMode('equal')
+      setCustomAmounts({})
+    }
+    // Only re-run when a different transaction is opened for editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing?.id])
+
   const numericAmount = round2(parseFloat(amount) || 0)
 
   // Splitting applies to EXPENSES only. Income is always personal; instead of
@@ -218,11 +274,13 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
     if (!canSubmit || submitting) return
 
     setSubmitting(true)
+    setSaveError(null)
     try {
       // Income settling a person's repayment: raise your balance AND clear that
       // much of what they owe you (surplus flips to money you owe them). Handled
-      // by a dedicated endpoint; the person is not notified.
-      if (isIncome && settleFrom) {
+      // by a dedicated endpoint; the person is not notified. (Create-only — the
+      // settle-up shortcut isn't offered while editing an existing entry.)
+      if (!isEditing && isIncome && settleFrom) {
         await settleUp(settleFrom, numericAmount, {
           date,
           description: description.trim() || undefined,
@@ -231,8 +289,7 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
         return
       }
 
-      // Persist via the API, then close only once the server confirms.
-      await addTransaction({
+      const payload = {
         type: txType,
         description: description.trim(),
         amount: numericAmount,
@@ -249,8 +306,19 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
         attachmentName,
         // Income never counts toward budgets; for expenses, honor the toggle.
         includeInBudget: isIncome ? false : includeInBudget,
-      })
+      }
+
+      // Persist via the API, then close only once the server confirms.
+      if (isEditing && editing) {
+        await updateTransaction(editing.id, payload)
+      } else {
+        await addTransaction(payload)
+      }
       resetAndClose()
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err.message : 'Could not save changes.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -260,7 +328,15 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
     <Modal
       open={open}
       onClose={resetAndClose}
-      title={isIncome ? 'New Income' : 'New Expense'}
+      title={
+        isEditing
+          ? isIncome
+            ? 'Edit Income'
+            : 'Edit Expense'
+          : isIncome
+            ? 'New Income'
+            : 'New Expense'
+      }
     >
       <form onSubmit={submit}>
         {/* Expense / Income segmented toggle */}
@@ -727,6 +803,12 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
         </>
         )}
 
+        {saveError && (
+          <p className="mt-3 text-center text-xs font-medium text-money-out">
+            {saveError}
+          </p>
+        )}
+
         <button
           type="submit"
           disabled={!canSubmit || submitting}
@@ -737,9 +819,11 @@ export function TransactionForm({ open, onClose }: TransactionFormProps) {
           {submitting && <Loader2 size={16} className="animate-spin" />}
           {submitting
             ? 'Saving…'
-            : isIncome
-              ? 'Add Income'
-              : 'Add Expense'}
+            : isEditing
+              ? 'Save changes'
+              : isIncome
+                ? 'Add Income'
+                : 'Add Expense'}
         </button>
       </form>
     </Modal>

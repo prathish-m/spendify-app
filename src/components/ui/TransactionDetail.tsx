@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Calendar,
   Paperclip,
+  Pencil,
   Tag,
   User,
 } from 'lucide-react'
@@ -24,15 +25,21 @@ export function TransactionDetail({
   tx,
   open,
   onClose,
+  onEdit,
 }: {
   tx: Transaction | null
   open: boolean
   onClose: () => void
+  /** Called when the user taps Edit. Omit/absent → no edit affordance. */
+  onEdit?: (tx: Transaction) => void
 }) {
   const people = useStore((s) => s.people)
   if (!tx) return null
 
   const isIncome = tx.type === 'income'
+  // You can only edit entries you OWN: not a split shared TO you, and not a
+  // system-generated adjustment/settlement movement.
+  const canEdit = Boolean(onEdit) && !tx.sharedByMe && !tx.isAdjustment
   const myShare = tx.isSplit
     ? tx.shares.find((s) => s.personId === ME_ID)?.amount ?? 0
     : tx.amount
@@ -155,6 +162,17 @@ export function TransactionDetail({
             <span className="truncate">{tx.attachmentName ?? 'Proof'}</span>
           </a>
         </div>
+      )}
+
+      {/* Edit action — only for transactions you own (see canEdit above). */}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => onEdit?.(tx)}
+          className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-full bg-slate-900 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <Pencil size={15} /> Edit transaction
+        </button>
       )}
     </Modal>
   )

@@ -12,6 +12,7 @@ import { useStore, personName } from '../store/useStore'
 import { attachmentUrl } from '../lib/api'
 import { useConfirm } from './ui/ConfirmDialog'
 import { TransactionDetail } from './ui/TransactionDetail'
+import { TransactionForm } from './TransactionForm'
 import { FullScreenSheet } from './ui/FullScreenSheet'
 import { ME_ID, type Transaction } from '../types'
 import { formatDate, formatMoney } from '../lib/format'
@@ -47,6 +48,8 @@ export function TransactionHistory() {
 
   // Detailed-view state: the transaction currently expanded in a modal.
   const [detailTx, setDetailTx] = useState<Transaction | null>(null)
+  // Edit-mode state: the transaction currently being edited in the form modal.
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
 
   // Full-screen "see all" view: the compact card shows only the latest few;
   // this opens the complete, searchable/selectable list.
@@ -275,12 +278,27 @@ export function TransactionHistory() {
         )}
       </FullScreenSheet>
 
-      {/* Detailed read-only view of a single transaction. */}
+      {/* Detailed read-only view of a single transaction. Tapping Edit closes
+          this and opens the prefilled form below. */}
       <TransactionDetail
         tx={detailTx}
         open={detailTx !== null}
         onClose={() => setDetailTx(null)}
+        onEdit={(tx) => {
+          setDetailTx(null)
+          setEditingTx(tx)
+        }}
       />
+
+      {/* Edit form (reuses the add form in edit mode). Mounted only while
+          editing so its state is fresh for each opened transaction. */}
+      {editingTx && (
+        <TransactionForm
+          open={editingTx !== null}
+          editing={editingTx}
+          onClose={() => setEditingTx(null)}
+        />
+      )}
     </section>
   )
 }

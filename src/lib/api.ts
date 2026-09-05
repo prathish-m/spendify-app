@@ -209,6 +209,13 @@ export const api = {
       body: JSON.stringify(tx),
     }),
 
+  /** Edit a transaction you own, in place (re-notifies linked split members). */
+  updateTransaction: (id: string, tx: Omit<Transaction, 'id' | 'createdAt'>) =>
+    request<{ state: AppState }>(`/transactions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(tx),
+    }),
+
   removeTransaction: (id: string) =>
     request<{ state: AppState }>(`/transactions/${id}`, { method: 'DELETE' }),
 

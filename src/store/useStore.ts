@@ -77,6 +77,11 @@ interface StoreState {
 
   // Transactions
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>
+  /** Edit a transaction you own, in place. Rethrows so the form can show it. */
+  updateTransaction: (
+    id: string,
+    tx: Omit<Transaction, 'id' | 'createdAt'>,
+  ) => Promise<void>
   removeTransaction: (id: string) => Promise<void>
   removeTransactions: (ids: string[]) => Promise<void>
   /** Accept or reject a split someone shared with you. */
@@ -339,6 +344,18 @@ export const useStore = create<StoreState>()((set, get) => {
 
     addTransaction: async (tx) => {
       await run(async () => (await api.addTransaction(tx)).state)
+    },
+
+    // Inline sync (not via run) so a validation/404 error surfaces in the edit
+    // form rather than tripping the global connection banner.
+    updateTransaction: async (id, tx) => {
+      beginBusy()
+      try {
+        const { state } = await api.updateTransaction(id, tx)
+        applyState(state)
+      } finally {
+        endBusy()
+      }
     },
 
     removeTransaction: async (id) => {
