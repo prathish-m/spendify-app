@@ -3,6 +3,7 @@ import { Plus, Trash2, Wallet, X, PlusCircle, Pencil } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { ApiError, type NewBudget } from '../lib/api'
 import { CATEGORIES, type Budget } from '../types'
+import { allCategories, getCustomCategories } from '../lib/categories'
 import { formatMoney, formatDate } from '../lib/format'
 import { currentMonthRange, computeBudgetProgress } from '../lib/analytics'
 import { CHART_COLORS as COLORS } from '../lib/colors'
@@ -54,10 +55,38 @@ export function BudgetManager() {
     return () => k++
   }, [])
 
+  // Categories offered in the per-category limit picker: the built-in set plus
+  // the user's custom categories (same list the transaction form uses), so a
+  // budget can cap spending on a custom category too. Read once on mount from
+  // localStorage — custom categories are created in the transaction form.
+  const categoryOptions = useMemo(
+    () => allCategories(getCustomCategories()),
+    [],
+  )
+
+  // Live allocation summary: how much of the overall budget is assigned to
+  // per-category limits, and how much is left unallocated. Blank/invalid limit
+  // amounts count as zero. `unallocated` can go negative if the category limits
+  // together exceed the overall amount (surfaced in red as "over-allocated").
+  const { allocated, unallocated, overAllocated } = useMemo(() => {
+    const overall = Number(amount)
+    const alloc = limits.reduce((sum, l) => {
+      const n = Number(l.amount)
+      return Number.isFinite(n) && n > 0 ? sum + n : sum
+    }, 0)
+    const overallSafe = Number.isFinite(overall) && overall > 0 ? overall : 0
+    const remaining = overallSafe - alloc
+    return {
+      allocated: alloc,
+      unallocated: remaining,
+      overAllocated: remaining < 0,
+    }
+  }, [amount, limits])
+
   const addLimitRow = () =>
     setLimits((prev) => [
       ...prev,
-      { key: nextKey(), category: CATEGORIES[0], amount: '' },
+      { key: nextKey(), category: String(categoryOptions[0] ?? CATEGORIES[0]), amount: '' },
     ])
 
   const updateLimitRow = (key: number, patch: Partial<DraftLimit>) =>
@@ -252,7 +281,13 @@ export function BudgetManager() {
                 onChange={(e) => updateLimitRow(l.key, { category: e.target.value })}
                 className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
               >
-                {CATEGORIES.map((c) => (
+                {/* Built-in + custom categories. If an edited budget's saved
+                    limit uses a category no longer in the list, keep it as an
+                    option so the select still shows the right value. */}
+                {(categoryOptions.some((c) => c === l.category)
+                  ? categoryOptions
+                  : [l.category, ...categoryOptions]
+                ).map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -278,6 +313,28 @@ export function BudgetManager() {
               </button>
             </div>
           ))}
+
+          {/* Live allocation summary: shows how much of the overall budget is
+              still unassigned as category limits are typed. Turns red when the
+              limits together exceed the overall amount. Read-only hint only. */}
+          {limits.length > 0 && (
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-xs">
+              <span className="text-slate-500">
+                Allocated {formatMoney(allocated)}
+              </span>
+              <span
+                className={
+                  overAllocated
+                    ? 'font-semibold text-money-out'
+                    : 'font-medium text-slate-700'
+                }
+              >
+                {overAllocated
+                  ? `Over by ${formatMoney(Math.abs(unallocated))}`
+                  : `Unallocated ${formatMoney(unallocated)}`}
+              </span>
+            </div>
+          )}
         </div>
 
         {error && (
