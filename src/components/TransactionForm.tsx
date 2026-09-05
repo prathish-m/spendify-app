@@ -28,6 +28,7 @@ import {
   getCustomCategories,
 } from '../lib/categories'
 import { equalSplit } from '../lib/settlements'
+import { loanOutstanding } from '../lib/loans'
 import { formatMoney, round2, todayISO } from '../lib/format'
 
 interface TransactionFormProps {
@@ -53,9 +54,11 @@ export function TransactionForm({
   editing = null,
 }: TransactionFormProps) {
   const people = useStore((s) => s.people)
+  const loans = useStore((s) => s.loans)
   const addTransaction = useStore((s) => s.addTransaction)
   const updateTransaction = useStore((s) => s.updateTransaction)
   const settleUp = useStore((s) => s.settleUp)
+  const repayLoan = useStore((s) => s.repayLoan)
   const isEditing = editing !== null
   // Surfaces a validation/404 error from an edit save inline in the form.
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -66,6 +69,12 @@ export function TransactionForm({
   // person id, saving raises your balance AND clears that much of their debt
   // (surplus flips to money you owe them). The person is not notified.
   const [settleFrom, setSettleFrom] = useState<string>('')
+  // Income only: optionally put part of this income toward repaying one of your
+  // outstanding loans. `repayFromId` is the chosen loan id ('' = none);
+  // `repayAmount` is the raw amount string (clamped to the loan's outstanding
+  // and the income amount on save). Recorded via the existing repayLoan flow.
+  const [repayFromId, setRepayFromId] = useState<string>('')
+  const [repayAmount, setRepayAmount] = useState('')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState<string>('General')
@@ -150,6 +159,19 @@ export function TransactionForm({
   }
 
   const isIncome = txType === 'income'
+
+  // Loans you can repay from an income: your own (not shared-in) loans that
+  // still have an outstanding balance. Money you BORROWED that you're now
+  // paying back, or money you LENT that's being written down — either way the
+  // owner records the repayment. Only offered when adding new income.
+  const repayableLoans = useMemo(
+    () => loans.filter((l) => !l.sharedByMe && loanOutstanding(l) > 0),
+    [loans],
+  )
+  const selectedRepayLoan = useMemo(
+    () => repayableLoans.find((l) => l.id === repayFromId) ?? null,
+    [repayableLoans, repayFromId],
+  )
 
   // Split state (only relevant for expenses)
   const [isSplit, setIsSplit] = useState(false)
@@ -253,6 +275,8 @@ export function TransactionForm({
     setSplitMode('equal')
     setCustomAmounts({})
     setSettleFrom('')
+    setRepayFromId('')
+    setRepayAmount('')
     onClose()
   }
 
@@ -313,6 +337,17 @@ export function TransactionForm({
         await updateTransaction(editing.id, payload)
       } else {
         await addTransaction(payload)
+        // Income → optionally put part of it toward repaying a loan. Done after
+        // the income is saved; the repay amount is clamped to the loan's
+        // outstanding and the income amount. Failures here surface inline but
+        // the income itself is already recorded.
+        if (isIncome && selectedRepayLoan) {
+          const outstanding = loanOutstanding(selectedRepayLoan)
+          const applied = round2(
+            Math.min(parseFloat(repayAmount) || 0, outstanding, numericAmount),
+          )
+          if (applied > 0) await repayLoan(selectedRepayLoan.id, applied, date)
+        }
       }
       resetAndClose()
     } catch (err) {
@@ -601,6 +636,76 @@ export function TransactionForm({
             )}
           </div>
         )}
+        {/* Income only: put part of this income toward repaying one of your
+            outstanding loans. Records a repayment against the chosen loan
+            (clamped to its outstanding balance and to this income's amount). */}
+        {isIncome && !isEditing && repayableLoans.length > 0 && (
+          <div className="border-b border-slate-100 py-3">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+              <ArrowDownLeft size={12} /> Put toward a loan{' '}
+              <span className="normal-case text-slate-300">(optional)</span>
+            </div>
+            <select
+              value={repayFromId}
+              onChange={(e) => {
+                const id = e.target.value
+                setRepayFromId(id)
+                // Prefill with the smaller of the loan's outstanding or the
+                // income amount, so the common "repay in full" case is one tap.
+                const loan = repayableLoans.find((l) => l.id === id)
+                if (loan) {
+                  const suggested = round2(
+                    Math.min(loanOutstanding(loan), numericAmount || loanOutstanding(loan)),
+                  )
+                  setRepayAmount(suggested > 0 ? String(suggested) : '')
+                } else {
+                  setRepayAmount('')
+                }
+              }}
+              className="w-full cursor-pointer rounded-lg border-0 bg-slate-100 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+            >
+              <option value="">No loan — just add income</option>
+              {repayableLoans.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.direction === 'borrowed' ? 'Repay' : 'Write down'}{' '}
+                  {personName(people, l.personId)} ·{' '}
+                  {formatMoney(loanOutstanding(l))} left
+                </option>
+              ))}
+            </select>
+            {selectedRepayLoan && (
+              <>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={repayAmount}
+                  onChange={(e) => setRepayAmount(e.target.value)}
+                  placeholder="Amount to apply"
+                  className="mt-2 w-full rounded-lg border-0 bg-slate-100 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  Applies up to{' '}
+                  {formatMoney(
+                    round2(
+                      Math.min(
+                        parseFloat(repayAmount) || 0,
+                        loanOutstanding(selectedRepayLoan),
+                        numericAmount || 0,
+                      ),
+                    ),
+                  )}{' '}
+                  toward this loan (outstanding{' '}
+                  {formatMoney(loanOutstanding(selectedRepayLoan))}). The income
+                  is still recorded in full.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+
 
         {/* Split toggle — expenses only. Income is never split. */}
         {!isIncome && (

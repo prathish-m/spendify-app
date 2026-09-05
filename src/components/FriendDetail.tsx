@@ -63,8 +63,6 @@ export function FriendDetail({ personId }: { personId: string }) {
     [loans, personId],
   )
 
-  const combined = splitNet + loanNet
-
   const repay = async (loan: Loan) => {
     const raw = window.prompt(
       `Record a repayment for this loan (outstanding ${formatMoney(
@@ -89,30 +87,50 @@ export function FriendDetail({ personId }: { personId: string }) {
 
   return (
     <div className="space-y-5">
-      {/* Combined position headline */}
+      {/* Split position headline. This mirrors the Dashboard "Settlements"
+          figure exactly — it reflects SPLIT BILLS ONLY (no loans), because
+          settlements never include loans. The loan balance is shown as its own
+          line below so the two numbers stay consistent across the app. */}
       <div className="rounded-2xl bg-slate-50 p-4">
         <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
           Overall with {name}
         </p>
         <p
           className={`mt-1 text-2xl font-semibold tracking-tight ${
-            combined > 0
+            splitNet > 0
               ? 'text-money-in'
-              : combined < 0
+              : splitNet < 0
                 ? 'text-money-out'
                 : 'text-slate-900'
           }`}
         >
-          {combined > 0 ? '+' : combined < 0 ? '−' : ''}
-          {formatMoney(Math.abs(combined))}
+          {splitNet > 0 ? '+' : splitNet < 0 ? '−' : ''}
+          {formatMoney(Math.abs(splitNet))}
         </p>
         <p className="mt-0.5 text-xs text-slate-400">
-          {combined > 0
-            ? `${name} owes you overall`
-            : combined < 0
-              ? `You owe ${name} overall`
-              : 'All settled up'}
+          {splitNet > 0
+            ? `${name} owes you on split bills`
+            : splitNet < 0
+              ? `You owe ${name} on split bills`
+              : 'All settled up on split bills'}
         </p>
+        {/* Loan balance shown separately (kept out of the settlement figure). */}
+        {loanNet !== 0 && (
+          <p className="mt-1.5 border-t border-slate-200/70 pt-1.5 text-[11px] text-slate-400">
+            Loans:{' '}
+            <span
+              className={
+                loanNet > 0
+                  ? 'font-semibold text-money-in'
+                  : 'font-semibold text-money-out'
+              }
+            >
+              {loanNet > 0 ? '+' : '−'}
+              {formatMoney(Math.abs(loanNet))}
+            </span>{' '}
+            {loanNet > 0 ? `${name} owes you` : `you owe ${name}`}
+          </p>
+        )}
       </div>
 
       {/* Loans section */}

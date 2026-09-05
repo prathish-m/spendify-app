@@ -11,42 +11,47 @@ import { round2 } from './format'
  *  the stored parameters — nothing is precomputed server-side — so the amount
  *  due naturally grows over time.
  *
- *    none      → due = principal
- *    simple    → due = principal × (1 + r × t)
- *    compound  → due = principal × (1 + r/n)^(n × t)
+ *  Interest is computed on a MONTHLY basis (the stored `ratePct` is a monthly
+ *  percentage rate, and time is measured in fractional months):
  *
- *  where r = ratePct/100 (annual), t = elapsed years, n = compounds per year.
+ *    none      → due = principal
+ *    simple    → due = principal × (1 + r × m)
+ *    compound  → due = principal × (1 + r)^m   (compounds every month)
+ *
+ *  where r = ratePct/100 (per month) and m = elapsed months.
  *  Recorded repayments are then subtracted to get the outstanding balance.
  */
 
-const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000
+// Average month length in ms (365.25 days / 12) — gives smooth fractional
+// month accrual regardless of which calendar months the loan spans.
+const MS_PER_MONTH = (365.25 / 12) * 24 * 60 * 60 * 1000
 
-/** Elapsed time in (fractional) years between an ISO start date and `asOf`. */
-export function elapsedYears(startISO: string, asOf: Date = new Date()): number {
+/** Elapsed time in (fractional) months between an ISO start date and `asOf`. */
+export function elapsedMonths(startISO: string, asOf: Date = new Date()): number {
   const start = new Date(startISO + 'T00:00:00')
   if (Number.isNaN(start.getTime())) return 0
   const ms = asOf.getTime() - start.getTime()
-  return ms <= 0 ? 0 : ms / MS_PER_YEAR
+  return ms <= 0 ? 0 : ms / MS_PER_MONTH
 }
 
 /**
  * The gross amount owed (principal + accrued interest) as of `asOf`, BEFORE
- * subtracting repayments. Never less than the principal (interest can't go
- * negative even if a future start date yields t=0).
+ * subtracting repayments. Interest accrues MONTHLY (see the header). Never less
+ * than the principal (interest can't go negative even if a future start date
+ * yields m=0).
  */
 export function loanGrossDue(loan: Loan, asOf: Date = new Date()): number {
   const p = loan.principal
   if (loan.interestType === 'none' || loan.ratePct <= 0) return round2(p)
 
-  const r = loan.ratePct / 100
-  const t = elapsedYears(loan.startDate, asOf)
+  const r = loan.ratePct / 100 // monthly rate
+  const m = elapsedMonths(loan.startDate, asOf)
 
   if (loan.interestType === 'simple') {
-    return round2(p * (1 + r * t))
+    return round2(p * (1 + r * m))
   }
-  // compound
-  const n = Math.max(1, loan.compoundsPerYear || 1)
-  return round2(p * Math.pow(1 + r / n, n * t))
+  // compound — compounds once per month
+  return round2(p * Math.pow(1 + r, m))
 }
 
 /** Sum of all repayments recorded against a loan. */

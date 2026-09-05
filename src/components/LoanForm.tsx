@@ -23,7 +23,6 @@ export function LoanForm({
   const [amount, setAmount] = useState('')
   const [interestType, setInterestType] = useState<LoanInterestType>('none')
   const [ratePct, setRatePct] = useState('')
-  const [compoundsPerYear, setCompoundsPerYear] = useState(12)
   const [startDate, setStartDate] = useState(todayISO())
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
@@ -43,7 +42,9 @@ export function LoanForm({
         principal: numericAmount,
         interestType,
         ratePct: interestType === 'none' ? 0 : Number(ratePct) || 0,
-        compoundsPerYear: interestType === 'compound' ? compoundsPerYear : 1,
+        // Interest now accrues monthly; we keep sending a value for the
+        // (unchanged) server field for backward compatibility. 12 = monthly.
+        compoundsPerYear: 12,
         startDate,
         description: description.trim(),
       })
@@ -119,40 +120,22 @@ export function LoanForm({
         <div className="space-y-3">
           <div>
             <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
-              Annual rate (%)
+              Monthly rate (%)
             </label>
             <input
               type="number"
               inputMode="decimal"
               value={ratePct}
               onChange={(e) => setRatePct(e.target.value)}
-              placeholder="e.g. 12"
+              placeholder="e.g. 2"
               className="w-full rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-300"
             />
+            <p className="mt-1 text-[11px] text-slate-400">
+              {interestType === 'compound'
+                ? 'Interest compounds monthly on the outstanding principal.'
+                : 'Interest accrues per month on the principal.'}
+            </p>
           </div>
-          {interestType === 'compound' && (
-            <div>
-              <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                Compounds
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCompoundsPerYear(12)}
-                  className={seg(compoundsPerYear === 12)}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCompoundsPerYear(1)}
-                  className={seg(compoundsPerYear === 1)}
-                >
-                  Yearly
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

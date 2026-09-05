@@ -26,13 +26,23 @@ export function PullToRefresh({
   const atTop = () =>
     (document.scrollingElement?.scrollTop ?? window.scrollY) <= 0
 
+  // True while any modal/dialog overlay is open. Every overlay in the app
+  // (Modal, FullScreenSheet, ConfirmDialog) renders with aria-modal="true", so
+  // this reliably detects them. We suppress pull-to-refresh in that case: a
+  // downward swipe inside (or behind) an open modal must NOT trigger a reload.
+  const modalOpen = () =>
+    document.querySelector('[aria-modal="true"]') !== null
+
   const onTouchStart = (e: React.TouchEvent) => {
-    if (refreshing) return
+    if (refreshing || modalOpen()) {
+      startY.current = null
+      return
+    }
     startY.current = atTop() ? e.touches[0].clientY : null
   }
 
   const onTouchMove = (e: React.TouchEvent) => {
-    if (startY.current == null || refreshing) return
+    if (startY.current == null || refreshing || modalOpen()) return
     const dy = e.touches[0].clientY - startY.current
     if (dy <= 0) {
       setPull(0)
