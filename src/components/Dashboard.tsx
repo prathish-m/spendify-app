@@ -14,7 +14,8 @@ import {
   computePersonalBalance,
   getMySettlements,
 } from '../lib/settlements'
-import { formatMoney } from '../lib/format'
+import { computeLoanTotals } from '../lib/loans'
+import { formatMoney, round2 } from '../lib/format'
 
 /**
  * Small inline balance editor. Shows a pencil affordance next to a value;
@@ -99,6 +100,7 @@ function InlineBalanceEdit({
  */
 export function Dashboard() {
   const transactions = useStore((s) => s.transactions)
+  const loans = useStore((s) => s.loans)
   const adjustPersonalBalance = useStore((s) => s.adjustPersonalBalance)
 
   // Derive everything from the single source of truth (memoized).
@@ -109,15 +111,25 @@ export function Dashboard() {
   // NOTE: the balance cards ALWAYS reflect ALL transactions. The category /
   // split exclusion filters live on the Insights (Analytics) section and must
   // never change these headline balances.
-  const { personal, my } = useMemo(() => {
+  const { personal, my, loanTotals } = useMemo(() => {
     const settlements = computePairwiseSettlements(transactions)
     return {
       personal: computePersonalBalance(transactions),
       my: getMySettlements(settlements),
+      loanTotals: computeLoanTotals(loans),
     }
-  }, [transactions])
+  }, [transactions, loans])
 
-  const net = my.totalOwedToYou - my.totalYouOwe
+  // Net Position = your personal cash balance
+  //   + money others owe you (splits) + money you lent (loans)
+  //   − money you owe others (splits) − money you borrowed (loans).
+  const net = round2(
+    personal.net +
+      my.totalOwedToYou +
+      loanTotals.totalOwedToYou -
+      my.totalYouOwe -
+      loanTotals.totalYouOwe,
+  )
 
   return (
     <section className="space-y-4">
@@ -182,10 +194,11 @@ export function Dashboard() {
           </p>
           <p className="mt-1 text-xs text-slate-400">
             {net > 0
-              ? "You're owed overall"
+              ? "You're up overall"
               : net < 0
-                ? 'You owe overall'
+                ? "You're down overall"
                 : 'All settled up'}
+            <span className="text-slate-300"> · balance + splits + loans</span>
           </p>
         </div>
       </div>
@@ -194,12 +207,17 @@ export function Dashboard() {
 }
 
 /**
- * Settlements = the pairwise "Who owes you" / "Who you owe" breakdown, with
- * inline balance editing. Lives on its own so it can be placed on a different
- * page from the headline balance cards.
+ * Settlements = two independent breakdowns, each with a "Who owes you" /
+ * "Who you owe" split:
+ *   1. Split settlement — pairwise balances from shared bills (editable inline).
+ *   2. Loan settlement  — net position from loans you lent / borrowed
+ *      (read-only here; manage individual loans in the friend detail view).
+ * Lives on its own so it can be placed on a different page from the balance
+ * cards.
  */
 export function Settlements() {
   const transactions = useStore((s) => s.transactions)
+  const loans = useStore((s) => s.loans)
   const people = useStore((s) => s.people)
   const adjustSettlement = useStore((s) => s.adjustSettlement)
 
@@ -207,17 +225,23 @@ export function Settlements() {
     () => getMySettlements(computePairwiseSettlements(transactions)),
     [transactions],
   )
+  const loanTotals = useMemo(() => computeLoanTotals(loans), [loans])
+
+  const splitEmpty = my.owedToYou.length === 0 && my.youOwe.length === 0
+  const loanEmpty =
+    loanTotals.owedToYou.length === 0 && loanTotals.youOwe.length === 0
 
   return (
     <section className="space-y-4">
+      {/* 1) Split settlement — inline-editable pairwise balances from bills. */}
       <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <h2 className="mb-4 text-sm font-semibold tracking-tight text-slate-900">
-          Settlements
+          Split settlement
         </h2>
 
-        {my.owedToYou.length === 0 && my.youOwe.length === 0 ? (
+        {splitEmpty ? (
           <p className="py-4 text-center text-xs text-slate-400">
-            No outstanding balances. Everyone is settled up. 🎉
+            No outstanding split balances. Everyone is settled up. 🎉
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -289,6 +313,79 @@ export function Settlements() {
                           title={`Edit balance with ${personName(people, s.to)}`}
                           onSave={(v) => adjustSettlement(s.to, -v)}
                         />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2) Loan settlement — net loan position per person (read-only). */}
+      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+        <h2 className="mb-4 text-sm font-semibold tracking-tight text-slate-900">
+          Loan settlement
+        </h2>
+
+        {loanEmpty ? (
+          <p className="py-4 text-center text-xs text-slate-400">
+            No outstanding loans. 🎉
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {/* Who owes you (loans you lent) */}
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-money-in">
+                <ArrowDownLeft size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">
+                  Who owes you
+                </span>
+              </div>
+              {loanTotals.owedToYou.length === 0 ? (
+                <p className="text-xs text-slate-300">Nothing owed to you.</p>
+              ) : (
+                <ul className="divide-y divide-slate-50">
+                  {loanTotals.owedToYou.map((l) => (
+                    <li
+                      key={l.personId}
+                      className="flex items-center justify-between gap-2 py-2 text-sm"
+                    >
+                      <span className="text-slate-700">
+                        {personName(people, l.personId)}
+                      </span>
+                      <span className="font-medium text-money-in">
+                        {formatMoney(l.net)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Who you owe (loans you borrowed) */}
+            <div className="border-t border-slate-100 pt-4 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+              <div className="mb-2 flex items-center gap-1.5 text-money-out">
+                <ArrowUpRight size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">
+                  Who you owe
+                </span>
+              </div>
+              {loanTotals.youOwe.length === 0 ? (
+                <p className="text-xs text-slate-300">You owe nothing.</p>
+              ) : (
+                <ul className="divide-y divide-slate-50">
+                  {loanTotals.youOwe.map((l) => (
+                    <li
+                      key={l.personId}
+                      className="flex items-center justify-between gap-2 py-2 text-sm"
+                    >
+                      <span className="text-slate-700">
+                        {personName(people, l.personId)}
+                      </span>
+                      <span className="font-medium text-money-out">
+                        {formatMoney(-l.net)}
                       </span>
                     </li>
                   ))}

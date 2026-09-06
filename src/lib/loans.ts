@@ -97,3 +97,65 @@ export function loanNetWithPerson(
       .reduce((s, l) => s + loanSignedBalance(l, asOf), 0),
   )
 }
+
+/** One person's net loan position (positive → they owe you; negative → you owe). */
+export interface LoanPersonBalance {
+  personId: string
+  /** Signed net across all loans with this person. */
+  net: number
+}
+
+/** Aggregate loan totals across everyone, for the overall "Loan settlement" view. */
+export interface LoanTotals {
+  /** People who owe YOU on net (their loans lent to them), largest first. */
+  owedToYou: LoanPersonBalance[]
+  /** People YOU owe on net (loans you borrowed), largest first. */
+  youOwe: LoanPersonBalance[]
+  /** Sum of every person's positive net (what you're owed via loans). */
+  totalOwedToYou: number
+  /** Sum of every person's negative net magnitude (what you owe via loans). */
+  totalYouOwe: number
+}
+
+/**
+ * Roll every loan up into per-person net balances and split them into the
+ * "you" perspective (mirrors `getMySettlements` for splits). A person whose
+ * loans net to ~0 is omitted from both lists.
+ */
+export function computeLoanTotals(
+  loans: Loan[],
+  asOf: Date = new Date(),
+): LoanTotals {
+  const EPS = 0.01
+  const byPerson: Record<string, number> = {}
+  for (const l of loans) {
+    byPerson[l.personId] =
+      (byPerson[l.personId] ?? 0) + loanSignedBalance(l, asOf)
+  }
+
+  const owedToYou: LoanPersonBalance[] = []
+  const youOwe: LoanPersonBalance[] = []
+  let totalOwedToYou = 0
+  let totalYouOwe = 0
+
+  for (const [personId, raw] of Object.entries(byPerson)) {
+    const net = round2(raw)
+    if (net > EPS) {
+      owedToYou.push({ personId, net })
+      totalOwedToYou += net
+    } else if (net < -EPS) {
+      youOwe.push({ personId, net })
+      totalYouOwe += -net
+    }
+  }
+
+  owedToYou.sort((a, b) => b.net - a.net)
+  youOwe.sort((a, b) => a.net - b.net) // most negative first
+
+  return {
+    owedToYou,
+    youOwe,
+    totalOwedToYou: round2(totalOwedToYou),
+    totalYouOwe: round2(totalYouOwe),
+  }
+}
