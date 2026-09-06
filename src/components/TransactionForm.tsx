@@ -15,6 +15,7 @@ import { Field, inputClass } from './ui/Field'
 import { useStore, personName } from '../store/useStore'
 import { api } from '../lib/api'
 import { DatePicker } from './ui/DatePicker'
+import { Select } from './ui/Select'
 import {
   ME_ID,
   type Category,
@@ -615,18 +616,16 @@ export function TransactionForm({
               <Users size={12} /> Settle a repayment{' '}
               <span className="normal-case text-slate-300">(optional)</span>
             </div>
-            <select
+            <Select
               value={settleFrom}
-              onChange={(e) => setSettleFrom(e.target.value)}
-              className="w-full cursor-pointer rounded-lg border-0 bg-slate-100 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-            >
-              <option value="">No one — just add income</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} repaid me
-                </option>
-              ))}
-            </select>
+              onChange={setSettleFrom}
+              ariaLabel="Settle a repayment"
+              buttonClassName="bg-slate-100 shadow-sm focus:ring-1 focus:ring-slate-300"
+              options={[
+                { value: '', label: 'No one — just add income' },
+                ...people.map((p) => ({ value: p.id, label: `${p.name} repaid me` })),
+              ]}
+            />
             {settleFrom && (
               <p className="mt-1.5 text-[11px] text-slate-400">
                 Adds {formatMoney(numericAmount)} to your balance and settles that
@@ -645,10 +644,9 @@ export function TransactionForm({
               <ArrowDownLeft size={12} /> Put toward a loan{' '}
               <span className="normal-case text-slate-300">(optional)</span>
             </div>
-            <select
+            <Select
               value={repayFromId}
-              onChange={(e) => {
-                const id = e.target.value
+              onChange={(id) => {
                 setRepayFromId(id)
                 // Prefill with the smaller of the loan's outstanding or the
                 // income amount, so the common "repay in full" case is one tap.
@@ -662,17 +660,19 @@ export function TransactionForm({
                   setRepayAmount('')
                 }
               }}
-              className="w-full cursor-pointer rounded-lg border-0 bg-slate-100 px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-            >
-              <option value="">No loan — just add income</option>
-              {repayableLoans.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.direction === 'borrowed' ? 'Repay' : 'Write down'}{' '}
-                  {personName(people, l.personId)} ·{' '}
-                  {formatMoney(loanOutstanding(l))} left
-                </option>
-              ))}
-            </select>
+              ariaLabel="Put toward a loan"
+              buttonClassName="bg-slate-100 shadow-sm focus:ring-1 focus:ring-slate-300"
+              options={[
+                { value: '', label: 'No loan — just add income' },
+                ...repayableLoans.map((l) => ({
+                  value: l.id,
+                  label: `${l.direction === 'borrowed' ? 'Repay' : 'Write down'} ${personName(
+                    people,
+                    l.personId,
+                  )} · ${formatMoney(loanOutstanding(l))} left`,
+                })),
+              ]}
+            />
             {selectedRepayLoan && (
               <>
                 <input
@@ -755,18 +755,16 @@ export function TransactionForm({
                   <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400">
                     <Users size={12} /> Paid by
                   </div>
-                  <select
+                  <Select
                     value={paidBy}
-                    onChange={(e) => setPaidBy(e.target.value)}
-                    className="w-full cursor-pointer rounded-lg border-0 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300"
-                  >
-                    <option value={ME_ID}>You</option>
-                    {people.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setPaidBy}
+                    ariaLabel="Paid by"
+                    buttonClassName="bg-white shadow-sm focus:ring-1 focus:ring-slate-300"
+                    options={[
+                      { value: ME_ID, label: 'You' },
+                      ...people.map((p) => ({ value: p.id, label: p.name })),
+                    ]}
+                  />
                 </div>
 
                 {/* Split mode: Equal / Custom */}

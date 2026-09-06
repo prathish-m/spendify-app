@@ -8,6 +8,7 @@ import { formatMoney, formatDate } from '../lib/format'
 import { currentMonthRange, computeBudgetProgress } from '../lib/analytics'
 import { CHART_COLORS as COLORS } from '../lib/colors'
 import { DatePicker } from './ui/DatePicker'
+import { Select } from './ui/Select'
 import { useConfirm } from './ui/ConfirmDialog'
 import { FullScreenSheet } from './ui/FullScreenSheet'
 
@@ -276,23 +277,20 @@ export function BudgetManager() {
 
           {limits.map((l) => (
             <div key={l.key} className="flex items-center gap-2">
-              <select
+              {/* Built-in + custom categories. If an edited budget's saved
+                  limit uses a category no longer in the list, keep it as an
+                  option so the select still shows the right value. */}
+              <Select
                 value={l.category}
-                onChange={(e) => updateLimitRow(l.key, { category: e.target.value })}
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-              >
-                {/* Built-in + custom categories. If an edited budget's saved
-                    limit uses a category no longer in the list, keep it as an
-                    option so the select still shows the right value. */}
-                {(categoryOptions.some((c) => c === l.category)
+                onChange={(v) => updateLimitRow(l.key, { category: v })}
+                ariaLabel="Category"
+                className="min-w-0 flex-1"
+                buttonClassName="rounded-xl border border-slate-200 bg-white focus:border-slate-400"
+                options={(categoryOptions.some((c) => c === l.category)
                   ? categoryOptions
                   : [l.category, ...categoryOptions]
-                ).map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                ).map((c) => ({ value: c, label: c }))}
+              />
               <input
                 type="number"
                 inputMode="decimal"
