@@ -144,11 +144,15 @@ export const api = {
       body: JSON.stringify({ email }),
     }),
 
-  /** Merge contact `id` into `intoId` (folds a duplicate onto the survivor). */
-  mergePerson: (id: string, intoId: string) =>
+  /**
+   * Merge contact `id` into `intoId` (folds a duplicate onto the survivor).
+   * `keepName` (optional) picks which alias the survivor keeps when neither
+   * side is linked; the server ignores it for linked survivors.
+   */
+  mergePerson: (id: string, intoId: string, keepName?: string) =>
     request<{ state: AppState }>(`/people/${id}/merge`, {
       method: 'POST',
-      body: JSON.stringify({ intoId }),
+      body: JSON.stringify({ intoId, keepName }),
     }),
 
   // ── Loans ──

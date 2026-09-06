@@ -65,8 +65,11 @@ interface StoreState {
   removePerson: (id: string) => Promise<void>
   /** Link a friend contact to a real account by email. */
   linkPerson: (id: string, email: string) => Promise<void>
-  /** Merge one contact into another (folds a duplicate onto the survivor). */
-  mergePerson: (id: string, intoId: string) => Promise<void>
+  /**
+   * Merge one contact into another (folds a duplicate onto the survivor).
+   * `keepName` picks which alias survives when neither side is linked.
+   */
+  mergePerson: (id: string, intoId: string, keepName?: string) => Promise<void>
 
   // Loans
   /** Create a loan (lend/borrow with optional interest) against a friend. */
@@ -306,10 +309,10 @@ export const useStore = create<StoreState>()((set, get) => {
 
     // Merge folds a duplicate contact onto the survivor. Inline (like link) so
     // any validation error surfaces next to the action, not the global banner.
-    mergePerson: async (id, intoId) => {
+    mergePerson: async (id, intoId, keepName) => {
       beginBusy()
       try {
-        const { state } = await api.mergePerson(id, intoId)
+        const { state } = await api.mergePerson(id, intoId, keepName)
         applyState(state)
       } finally {
         endBusy()

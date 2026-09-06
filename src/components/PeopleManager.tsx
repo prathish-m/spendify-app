@@ -159,20 +159,48 @@ function PersonRow({
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(person.name)
 
-  const isLinked = person.linkStatus === 'accepted' && person.linkedUserId
+  const isLinked = Boolean(
+    person.linkStatus === 'accepted' && person.linkedUserId,
+  )
   const mergeTargets = allPeople.filter((p) => p.id !== person.id)
+  const linkedOf = (p: Person) =>
+    Boolean(p.linkStatus === 'accepted' && p.linkedUserId)
 
-  const submitMerge = async (intoId: string) => {
+  // Rule 3 alias prompt: when neither the source nor the chosen target is
+  // linked, ask which display name the merged contact should keep. Holds the
+  // target being merged into (null = prompt closed).
+  const [aliasFor, setAliasFor] = useState<Person | null>(null)
+
+  const runMerge = async (intoId: string, keepName?: string) => {
     setBusy(true)
     setError(null)
     try {
-      await mergePerson(person.id, intoId)
+      await mergePerson(person.id, intoId, keepName)
+      setAliasFor(null)
       setMerging(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not merge contacts')
     } finally {
       setBusy(false)
     }
+  }
+
+  const onPickMergeTarget = (target: Person) => {
+    setError(null)
+    // Rule 1: two linked accounts can't be merged — block before any request.
+    if (isLinked && linkedOf(target)) {
+      setError("Can't merge two linked accounts")
+      return
+    }
+    // Rule 2: exactly one side linked → the link is preserved server-side, and
+    // linked contacts keep their real-account name, so no alias choice is
+    // needed; merge straight away.
+    if (isLinked || linkedOf(target)) {
+      void runMerge(target.id)
+      return
+    }
+    // Rule 3: both unlinked → ask which alias the survivor should keep.
+    setAliasFor(target)
   }
 
   const submitRename = async () => {
@@ -336,26 +364,75 @@ function PersonRow({
             Merge <span className="font-medium">{person.name}</span> into…
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {mergeTargets.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                disabled={busy}
-                onClick={() => submitMerge(t.id)}
-                className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 disabled:opacity-40"
-              >
-                {t.name}
-              </button>
-            ))}
+            {mergeTargets.map((t) => {
+              // Rule 1: a linked contact can't be merged into another linked
+              // contact — disable those targets when this source is linked.
+              const blocked = isLinked && linkedOf(t)
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={busy || blocked}
+                  onClick={() => onPickMergeTarget(t)}
+                  title={
+                    blocked ? "Can't merge two linked accounts" : undefined
+                  }
+                  className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 disabled:opacity-40"
+                >
+                  {t.name}
+                  {linkedOf(t) && (
+                    <Check size={10} className="text-money-in" />
+                  )}
+                </button>
+              )
+            })}
             <button
               type="button"
-              onClick={() => setMerging(false)}
+              onClick={() => {
+                setMerging(false)
+                setAliasFor(null)
+              }}
               aria-label="Cancel merge"
               className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
             >
               <X size={13} />
             </button>
           </div>
+
+          {/* Rule 3: both unlinked → pick which name the merged contact keeps. */}
+          {aliasFor && (
+            <div className="mt-2 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+              <p className="mb-1.5 px-0.5 text-[11px] text-slate-500">
+                Keep which name for the merged contact?
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => runMerge(aliasFor.id, aliasFor.name)}
+                  className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white transition-opacity disabled:opacity-40"
+                >
+                  {aliasFor.name}
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => runMerge(aliasFor.id, person.name)}
+                  className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 disabled:opacity-40"
+                >
+                  {person.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAliasFor(null)}
+                  aria-label="Cancel"
+                  className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       {error && <p className="mt-1 text-[11px] text-money-out">{error}</p>}

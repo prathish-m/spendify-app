@@ -66,9 +66,19 @@ export function TransactionHistory() {
   // several entries sharing the same date keep a deterministic order.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
+    // A "settle up from a person" action stores TWO ledger rows: a visible
+    // income cash-in and a paired split "debt-clear" adjustment (both in the
+    // 'Repayment' category). The split half is a settlement-only movement — its
+    // money is already excluded from personal balance / analytics — so showing
+    // it here just looks like a duplicate. Hide it so one action = one row.
+    // (Standalone 'Adjustment' split entries from a manual balance edit are NOT
+    // hidden, since they have no income partner and must stay visible.)
+    const visible = transactions.filter(
+      (t) => !(t.isAdjustment && t.isSplit && t.category === 'Repayment'),
+    )
     const matches = !q
-      ? transactions
-      : transactions.filter((t) => {
+      ? visible
+      : visible.filter((t) => {
           const names = [
             personName(people, t.paidBy),
             ...t.shares.map((s) => personName(people, s.personId)),
@@ -163,8 +173,18 @@ export function TransactionHistory() {
     </ul>
   )
 
+  // Count of rows the user actually sees (excludes the hidden settle-up
+  // debt-clear halves). Used for the header count, empty-state, and "See all".
+  const visibleCount = useMemo(
+    () =>
+      transactions.filter(
+        (t) => !(t.isAdjustment && t.isSplit && t.category === 'Repayment'),
+      ).length,
+    [transactions],
+  )
+
   const preview = filtered.slice(0, PREVIEW_COUNT)
-  const hasMore = transactions.length > PREVIEW_COUNT
+  const hasMore = visibleCount > PREVIEW_COUNT
 
   const openAll = () => setShowAll(true)
   const closeAll = () => {
@@ -180,13 +200,13 @@ export function TransactionHistory() {
           History
         </h2>
         <span className="text-xs text-slate-400">
-          {transactions.length}{' '}
-          {transactions.length === 1 ? 'entry' : 'entries'}
+          {visibleCount}{' '}
+          {visibleCount === 1 ? 'entry' : 'entries'}
         </span>
       </div>
 
       {/* Compact preview: the latest few, tap to open details. */}
-      {transactions.length === 0 ? (
+      {visibleCount === 0 ? (
         <p className="py-8 text-center text-xs text-slate-400">
           No transactions yet. Add your first expense to get started.
         </p>
@@ -199,7 +219,7 @@ export function TransactionHistory() {
               onClick={openAll}
               className="mt-3 w-full rounded-xl bg-slate-50 py-2.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
             >
-              See all {transactions.length} transactions
+              See all {visibleCount} transactions
             </button>
           )}
         </>

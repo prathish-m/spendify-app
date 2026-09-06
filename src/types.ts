@@ -41,11 +41,15 @@ export type Category =
   | 'Health'
   | 'Shopping'
   | 'Adjustment'
+  // System category for the two ledger rows a "settle up from a person" writes
+  // (an income cash-in + a split debt-clear). Like 'Adjustment', it is created
+  // automatically and never picked in the entry form.
+  | 'Repayment'
 
 /**
  * Categories offered in the manual entry form.
- * 'Adjustment' is intentionally excluded here — those entries are created
- * automatically when a balance is edited, not picked by the user.
+ * 'Adjustment' and 'Repayment' are intentionally excluded here — those entries
+ * are created automatically (balance edit / settle-up), not picked by the user.
  */
 export const CATEGORIES: Category[] = [
   'General',
