@@ -1,36 +1,23 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
 
 /**
- * A compact, themed single-select dropdown that replaces the browser's native
- * `<select>` control (which renders as jarring native Android UI inside the
- * WebView).
+ * A compact, themed single-select control that replaces the browser's native
+ * `<select>` (which renders as jarring native Android UI inside the WebView).
  *
- * The options list is rendered through a portal to `document.body` with fixed
- * positioning, anchored to the trigger button. This is essential because the
- * control lives inside modals whose bodies use `overflow-y-auto` — an in-flow
- * absolute list would be clipped/hidden by that container. The list flips above
- * the button when there isn't room below, and closes on outside-click, Escape,
- * or scroll.
+ * Instead of an anchored dropdown popover, the options open in a dedicated
+ * **centered picker modal** portalled to `document.body`. This is the most
+ * robust approach for this app because the control lives inside other modals
+ * whose bodies use `overflow-y-auto`: an anchored popover was being clipped by
+ * that container and dismissed by scroll events on Android. A separate centered
+ * modal has no positioning/clipping/scroll concerns at all — it simply overlays
+ * everything (z-index above the parent modal) and closes on pick / backdrop /
+ * Escape.
  */
 export interface SelectOption {
   value: string
   label: string
-}
-
-interface Rect {
-  left: number
-  top: number
-  width: number
-  /** True when the list is anchored ABOVE the button (opens upward). */
-  above: boolean
 }
 
 export function Select({
@@ -53,131 +40,92 @@ export function Select({
   buttonClassName?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [rect, setRect] = useState<Rect | null>(null)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-
   const selected = options.find((o) => o.value === value)
 
-  /** Fixed-position style for the portalled list, based on the measured rect. */
-  const listStyle: CSSProperties = rect
-    ? {
-        left: rect.left,
-        width: rect.width,
-        ...(rect.above
-          ? { bottom: window.innerHeight - rect.top + 4 }
-          : { top: rect.top + 4 }),
-      }
-    : {}
-
-  /** Measure the trigger and decide whether to open below or above it. */
-  const measure = () => {
-    const el = btnRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    // Rough list height estimate (capped at max-h-56 = 14rem = 224px).
-    const estimated = Math.min(224, options.length * 40 + 8)
-    const spaceBelow = window.innerHeight - r.bottom
-    const above = spaceBelow < estimated + 8 && r.top > spaceBelow
-    setRect({
-      left: r.left,
-      top: above ? r.top : r.bottom,
-      width: r.width,
-      above,
-    })
-  }
-
-  // Measure synchronously right before paint when opening (avoids a flash at
-  // the wrong position).
-  useLayoutEffect(() => {
-    if (open) measure()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  // Close on outside click / Escape / scroll (scroll-close keeps the anchored
-  // position honest without jitter on Android).
+  // Close on Escape while the picker is open. Background scroll is intentionally
+  // NOT locked here: the parent Modal already locks it, and toggling it again
+  // on unmount could unlock while the parent is still open.
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (
-        btnRef.current && !btnRef.current.contains(t) &&
-        listRef.current && !listRef.current.contains(t)
-      ) {
-        setOpen(false)
-      }
-    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false)
     }
-    const onScroll = () => setOpen(false)
-    document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
-    // Capture phase so we catch scrolls on any ancestor scroll container.
-    window.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', onScroll)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-      window.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', onScroll)
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={className}>
       <button
-        ref={btnRef}
         type="button"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-900 focus:outline-none ${buttonClassName}`}
       >
         <span className={`min-w-0 flex-1 truncate ${selected ? '' : 'text-slate-400'}`}>
           {selected ? selected.label : placeholder}
         </span>
-        <ChevronDown
-          size={15}
-          className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <ChevronDown size={15} className="shrink-0 text-slate-400" />
       </button>
 
-      {open && rect &&
+      {open &&
         createPortal(
           <div
-            ref={listRef}
-            role="listbox"
-            className="fixed z-[60] max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
-            style={listStyle}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={ariaLabel}
           >
-            {options.map((o) => {
-              const isSelected = o.value === value
-              return (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => {
-                    onChange(o.value)
-                    setOpen(false)
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
-                    isSelected
-                      ? 'bg-slate-900 font-medium text-white'
-                      : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                  {isSelected && <Check size={14} className="shrink-0" />}
-                </button>
-              )
-            })}
+            {/* Backdrop — sits above the parent modal's own backdrop. */}
+            <div
+              className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"
+              onClick={() => setOpen(false)}
+            />
+
+            {/* Centered panel */}
+            <div className="relative z-10 flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+              {ariaLabel && (
+                <header className="px-5 pt-5 pb-2">
+                  <h3 className="text-sm font-semibold tracking-tight text-slate-900">
+                    {ariaLabel}
+                  </h3>
+                </header>
+              )}
+              <div
+                role="listbox"
+                className="overflow-y-auto px-3 pb-4 pt-1"
+              >
+                {options.map((o) => {
+                  const isSelected = o.value === value
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        onChange(o.value)
+                        setOpen(false)
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-3 text-left text-sm transition-colors ${
+                        isSelected
+                          ? 'bg-slate-900 font-medium text-white'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                      {isSelected && <Check size={16} className="shrink-0" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>,
           document.body,
         )}
     </div>
   )
 }
+
