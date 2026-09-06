@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { HandCoins, Plus, Trash2 } from 'lucide-react'
+import { HandCoins, Loader2, Plus, Trash2 } from 'lucide-react'
 import { useStore, personName } from '../store/useStore'
 import { useConfirm } from './ui/ConfirmDialog'
+import { Modal } from './ui/Modal'
 import { ME_ID, type Loan, type Transaction } from '../types'
 import { formatMoney, formatDate } from '../lib/format'
 import { computePairwiseSettlements } from '../lib/settlements'
@@ -28,6 +29,12 @@ export function FriendDetail({ personId }: { personId: string }) {
   const confirm = useConfirm()
 
   const [adding, setAdding] = useState(false)
+  // Record-repayment modal state: the loan being repaid (null = closed), the
+  // raw amount input, an inline error, and an in-flight flag.
+  const [repayFor, setRepayFor] = useState<Loan | null>(null)
+  const [repayInput, setRepayInput] = useState('')
+  const [repayError, setRepayError] = useState<string | null>(null)
+  const [repaySaving, setRepaySaving] = useState(false)
   const name = personName(people, personId)
 
   // Net split balance with this person (positive → they owe you).
@@ -63,16 +70,45 @@ export function FriendDetail({ personId }: { personId: string }) {
     [loans, personId],
   )
 
-  const repay = async (loan: Loan) => {
-    const raw = window.prompt(
-      `Record a repayment for this loan (outstanding ${formatMoney(
-        loanOutstanding(loan),
-      )}):`,
-    )
-    if (raw == null) return
-    const amt = Number(raw)
-    if (!Number.isFinite(amt) || amt <= 0) return
-    await repayLoan(loan.id, amt)
+  // Open the themed repayment modal for a loan (replaces the native prompt).
+  const openRepay = (loan: Loan) => {
+    setRepayFor(loan)
+    setRepayInput('')
+    setRepayError(null)
+  }
+
+  const closeRepay = () => {
+    if (repaySaving) return
+    setRepayFor(null)
+    setRepayInput('')
+    setRepayError(null)
+  }
+
+  const submitRepay = async () => {
+    if (!repayFor || repaySaving) return
+    const outstanding = loanOutstanding(repayFor)
+    const amt = Number(repayInput)
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setRepayError('Enter an amount greater than zero.')
+      return
+    }
+    if (amt > outstanding + 0.001) {
+      setRepayError(`That's more than the ${formatMoney(outstanding)} outstanding.`)
+      return
+    }
+    setRepaySaving(true)
+    setRepayError(null)
+    try {
+      await repayLoan(repayFor.id, amt)
+      setRepayFor(null)
+      setRepayInput('')
+    } catch (err) {
+      setRepayError(
+        err instanceof Error ? err.message : 'Could not record the repayment.',
+      )
+    } finally {
+      setRepaySaving(false)
+    }
   }
 
   const del = async (loan: Loan) => {
@@ -178,7 +214,7 @@ export function FriendDetail({ personId }: { personId: string }) {
                       <p className="text-[11px] text-slate-400">
                         {loan.interestType === 'none'
                           ? 'No interest'
-                          : `${loan.interestType} · ${loan.ratePct}%/yr`}{' '}
+                          : `${loan.interestType} · ${loan.ratePct}%/mo`}{' '}
                         · from {formatDate(loan.startDate)}
                       </p>
                       {loan.description && (
@@ -207,7 +243,7 @@ export function FriendDetail({ personId }: { personId: string }) {
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => repay(loan)}
+                        onClick={() => openRepay(loan)}
                         disabled={out <= 0}
                         className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-40"
                       >
@@ -247,6 +283,98 @@ export function FriendDetail({ personId }: { personId: string }) {
           </ul>
         )}
       </div>
+
+      {/* Themed "Record repayment" modal (replaces the native window.prompt). */}
+      <Modal
+        open={repayFor !== null}
+        onClose={closeRepay}
+        title="Record repayment"
+      >
+        {repayFor && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              void submitRepay()
+            }}
+            className="space-y-4"
+          >
+            <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+              {repayFor.direction === 'lent'
+                ? `${name} owes you`
+                : `You owe ${name}`}{' '}
+              <span className="font-semibold text-slate-800">
+                {formatMoney(loanOutstanding(repayFor))}
+              </span>{' '}
+              outstanding.
+            </div>
+
+            <div>
+              <label
+                htmlFor="repay-amount"
+                className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-slate-400"
+              >
+                Amount repaid
+              </label>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-light text-slate-300">₹</span>
+                <input
+                  id="repay-amount"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={repayInput}
+                  onChange={(e) => {
+                    setRepayInput(e.target.value)
+                    if (repayError) setRepayError(null)
+                  }}
+                  placeholder="0.00"
+                  autoFocus
+                  className="w-full border-0 bg-transparent p-0 text-3xl font-semibold tracking-tight text-slate-900 placeholder:text-slate-200 focus:outline-none focus:ring-0"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setRepayInput(String(loanOutstanding(repayFor)))
+                }
+                className="mt-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-200"
+              >
+                Repay full ({formatMoney(loanOutstanding(repayFor))})
+              </button>
+            </div>
+
+            {repayError && (
+              <p className="text-[11px] font-medium text-money-out">
+                {repayError}
+              </p>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={closeRepay}
+                disabled={repaySaving}
+                className="flex-1 rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={repaySaving}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+              >
+                {repaySaving ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <HandCoins size={15} />
+                )}
+                Record
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   )
 }
