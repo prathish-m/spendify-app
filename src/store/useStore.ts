@@ -117,6 +117,16 @@ interface StoreState {
     amount: number,
     opts?: { date?: string; description?: string },
   ) => Promise<void>
+  /**
+   * Edit an existing settle-up (Repayment) entry in place. Only amount / date /
+   * description change; the paired debt-clear half stays in sync server-side.
+   * Rethrows so the edit modal can surface validation errors inline.
+   */
+  updateSettleUp: (
+    id: string,
+    amount: number,
+    opts?: { date?: string; description?: string },
+  ) => Promise<void>
 
   clearAll: () => Promise<void>
 
@@ -410,6 +420,18 @@ export const useStore = create<StoreState>()((set, get) => {
     settleUp: async (personId, amount, opts) => {
       if (personId === ME_ID) return
       await run(async () => (await api.settleUp(personId, amount, opts)).state)
+    },
+
+    // Inline sync (not via run) so a validation/404 error surfaces in the edit
+    // modal rather than tripping the global connection banner.
+    updateSettleUp: async (id, amount, opts) => {
+      beginBusy()
+      try {
+        const { state } = await api.updateSettleUp(id, amount, opts)
+        applyState(state)
+      } finally {
+        endBusy()
+      }
     },
 
     clearAll: async () => {

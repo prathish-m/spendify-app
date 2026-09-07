@@ -37,9 +37,15 @@ export function TransactionDetail({
   if (!tx) return null
 
   const isIncome = tx.type === 'income'
+  // A settle-up ("Repayment") is a special adjustment the user DID create and
+  // may want to correct (amount/date/description). It routes through the same
+  // onEdit callback; the parent opens the lightweight settlement editor for it.
+  const isSettleUp = tx.isAdjustment && tx.category === 'Repayment'
   // You can only edit entries you OWN: not a split shared TO you, and not a
-  // system-generated adjustment/settlement movement.
-  const canEdit = Boolean(onEdit) && !tx.sharedByMe && !tx.isAdjustment
+  // system-generated adjustment/settlement movement — EXCEPT settle-ups, which
+  // are editable via the dedicated flow above.
+  const canEdit =
+    Boolean(onEdit) && !tx.sharedByMe && (!tx.isAdjustment || isSettleUp)
   const myShare = tx.isSplit
     ? tx.shares.find((s) => s.personId === ME_ID)?.amount ?? 0
     : tx.amount

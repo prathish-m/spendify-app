@@ -13,6 +13,7 @@ import { attachmentUrl } from '../lib/api'
 import { useConfirm } from './ui/ConfirmDialog'
 import { TransactionDetail } from './ui/TransactionDetail'
 import { TransactionForm } from './TransactionForm'
+import { SettleUpEditForm } from './SettleUpEditForm'
 import { FullScreenSheet } from './ui/FullScreenSheet'
 import { ME_ID, type Transaction } from '../types'
 import { formatDate, formatMoney } from '../lib/format'
@@ -310,15 +311,24 @@ export function TransactionHistory() {
         }}
       />
 
-      {/* Edit form (reuses the add form in edit mode). Mounted only while
-          editing so its state is fresh for each opened transaction. */}
-      {editingTx && (
-        <TransactionForm
-          open={editingTx !== null}
-          editing={editingTx}
-          onClose={() => setEditingTx(null)}
-        />
-      )}
+      {/* Edit form. A settle-up ("Repayment") entry uses the lightweight
+          settlement editor (amount/date/description only, both paired halves
+          kept in sync); everything else reuses the full add form in edit mode.
+          Mounted only while editing so state is fresh per opened transaction. */}
+      {editingTx &&
+        (editingTx.isAdjustment && editingTx.category === 'Repayment' ? (
+          <SettleUpEditForm
+            tx={editingTx}
+            open={editingTx !== null}
+            onClose={() => setEditingTx(null)}
+          />
+        ) : (
+          <TransactionForm
+            open={editingTx !== null}
+            editing={editingTx}
+            onClose={() => setEditingTx(null)}
+          />
+        ))}
     </section>
   )
 }

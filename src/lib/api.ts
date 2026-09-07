@@ -188,6 +188,21 @@ export const api = {
       body: JSON.stringify({ personId, amount, ...opts }),
     }),
 
+  /**
+   * Edit an existing settle-up (Repayment) entry. Only amount / date /
+   * description change; the paired debt-clear half is updated server-side in
+   * lock-step. `id` may be either half of the pair.
+   */
+  updateSettleUp: (
+    id: string,
+    amount: number,
+    opts?: { date?: string; description?: string },
+  ) =>
+    request<{ state: AppState }>(`/settle-up/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ amount, ...opts }),
+    }),
+
   // ── Budgets ──
   /** Create a budget. Server rejects overlapping ranges with a 409. */
   addBudget: (budget: NewBudget) =>
